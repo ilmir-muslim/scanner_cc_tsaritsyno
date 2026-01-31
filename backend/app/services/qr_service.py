@@ -2,9 +2,8 @@ import qrcode
 import io
 import base64
 from typing import Optional
-import cv2
-import numpy as np
-from pyzbar.pyzbar import decode
+from PIL import Image
+import json
 
 
 class QRService:
@@ -37,27 +36,11 @@ class QRService:
 
     @staticmethod
     def decode_qr_from_image(image_bytes: bytes) -> Optional[str]:
-        """Decode QR code from image bytes"""
-        try:
-            # Конвертируем bytes в numpy array
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-
-            if img is None:
-                return None
-
-            # Декодируем QR коды
-            decoded_objects = decode(img)
-
-            if decoded_objects:
-                # Возвращаем первый найденный QR код
-                return decoded_objects[0].data.decode("utf-8")
-
-            return None
-
-        except Exception as e:
-            print(f"QR decoding error: {e}")
-            return None
+        """Decode QR code from image bytes - placeholder for future implementation"""
+        # В текущей реализации декодирование делается на фронтенде
+        # Это заглушка для будущей реализации на бэкенде
+        print("QR decoding is handled by frontend")
+        return None
 
     @staticmethod
     def validate_qr_content(content: str) -> bool:
@@ -67,3 +50,17 @@ class QRService:
         if len(content) > 1000:  # Reasonable limit
             return False
         return True
+
+    @staticmethod
+    def create_print_json(qr_content: str) -> str:
+        """Create JSON data for printing"""
+        qr_image = QRService.generate_qr_code(qr_content)
+
+        print_data = {
+            "qr_content": qr_content,
+            "qr_image": qr_image,
+            "timestamp": json.dumps({"scanned_at": "now"}, default=str),
+            "print_command": "window.print()",
+        }
+
+        return json.dumps(print_data)

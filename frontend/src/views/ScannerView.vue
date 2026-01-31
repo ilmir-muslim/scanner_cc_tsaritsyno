@@ -65,11 +65,11 @@
                 </div>
 
                 <div class="camera-actions">
-                    <button @click="capturePhoto" class="btn btn-info">
-                        📸 Сделать снимок
+                    <button @click="capturePhoto" class="btn btn-info" :disabled="isDecoding">
+                        📸 {{ isDecoding ? 'Декодирование...' : 'Сделать снимок' }}
                     </button>
-                    <button @click="uploadImage" class="btn btn-secondary">
-                        📤 Загрузить изображение
+                    <button @click="uploadImage" class="btn btn-secondary" :disabled="isDecoding">
+                        📤 {{ isDecoding ? 'Декодирование...' : 'Загрузить изображение' }}
                     </button>
                     <input ref="fileInput" type="file" accept="image/*" @change="handleFileUpload"
                         style="display: none;" />
@@ -79,6 +79,11 @@
             <div v-else class="camera-placeholder">
                 <div class="placeholder-icon">📷</div>
                 <p>Нажмите "Включить камеру" для начала сканирования</p>
+            </div>
+
+            <!-- QR Decoder Status -->
+            <div v-if="decoderStatus" class="decoder-status" :class="`status-${decoderStatus.type}`">
+                {{ decoderStatus.message }}
             </div>
         </div>
 
@@ -176,6 +181,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import jsQR from 'jsqr'
 
 const router = useRouter()
 
@@ -191,6 +197,8 @@ const selectedCamera = ref('')
 const availableCameras = ref([])
 const videoElement = ref(null)
 const fileInput = ref(null)
+const isDecoding = ref(false)
+const decoderStatus = ref(null)
 
 // Printer variables
 const printerStatus = ref('Проверка...')
@@ -315,6 +323,65 @@ const stopCamera = () => {
     isCameraActive.value = false
 }
 
+const decodeQRFromImage = async (imageData) => {
+    try {
+        isDecoding.value = true
+        decoderStatus.value = { type: 'info', message: 'Декодирование QR-кода...' }
+
+        // Создаем изображение
+        const image = new Image()
+        image.src = imageData
+
+        await new Promise((resolve, reject) => {
+            image.onload = resolve
+            image.onerror = reject
+        })
+
+        // Создаем canvas для обработки
+        const canvas = document.createElement('canvas')
+        canvas.width = image.width
+        canvas.height = image.height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+        // Получаем данные изображения
+        const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height)
+
+        // Используем jsQR для декодирования QR-кода
+        try {
+            const code = jsQR(
+                imageDataObj.data,
+                canvas.width,
+                canvas.height,
+                {
+                    inversionAttempts: "dontInvert",
+                }
+            )
+
+            if (code) {
+                decoderStatus.value = { type: 'success', message: 'QR-код найден!' }
+                return code.data
+            }
+
+            decoderStatus.value = { type: 'warning', message: 'QR-код не найден в изображении' }
+            return null
+        } catch (jsQRError) {
+            console.warn('jsQR decoding error:', jsQRError)
+            decoderStatus.value = { type: 'error', message: 'Ошибка декодирования QR-кода' }
+            return null
+        }
+    } catch (error) {
+        console.error('QR decoding error:', error)
+        decoderStatus.value = { type: 'error', message: 'Ошибка обработки изображения' }
+        return null
+    } finally {
+        setTimeout(() => {
+            isDecoding.value = false
+            decoderStatus.value = null
+        }, 2000)
+    }
+}
+
 const capturePhoto = async () => {
     if (!videoElement.value || !isCameraActive.value) return
 
@@ -326,32 +393,20 @@ const capturePhoto = async () => {
         const ctx = canvas.getContext('2d')
         ctx.drawImage(videoElement.value, 0, 0, canvas.width, canvas.height)
 
-        // Convert canvas to blob
-        canvas.toBlob(async (blob) => {
-            const formData = new FormData()
-            formData.append('image', blob, 'photo.jpg')
+        // Преобразуем в Data URL
+        const imageData = canvas.toDataURL('image/jpeg', 0.8)
 
-            try {
-                const response = await axios.post('/api/scans/scan-image/', formData, {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
-                })
+        // Декодируем QR-код на фронтенде
+        const qrContent = await decodeQRFromImage(imageData)
 
-                if (response.data && response.data.qr_content) {
-                    lastScan.value = response.data
-                    showToast('QR-код найден!', 'success')
-                    playBeep()
-                    stopCamera()
-                } else {
-                    showToast('QR-код не обнаружен на изображении', 'warning')
-                }
-            } catch (error) {
-                console.error('Error uploading image:', error)
-                showToast('Не удалось обработать изображение', 'error')
-            }
-        }, 'image/jpeg', 0.8)
-
+        if (qrContent) {
+            // Если QR-код найден, отправляем на бэкенд
+            await processScan(qrContent, 'camera')
+            playBeep()
+            stopCamera()
+        } else {
+            showToast('QR-код не обнаружен на изображении. Проверьте качество изображения.', 'warning')
+        }
     } catch (error) {
         console.error('Error capturing photo:', error)
         showToast('Не удалось сделать снимок', 'error')
@@ -359,7 +414,7 @@ const capturePhoto = async () => {
 }
 
 const uploadImage = () => {
-    if (fileInput.value) {
+    if (fileInput.value && !isDecoding.value) {
         fileInput.value.click()
     }
 }
@@ -368,27 +423,34 @@ const handleFileUpload = async (event) => {
     const file = event.target.files[0]
     if (!file) return
 
-    const formData = new FormData()
-    formData.append('image', file)
-
     try {
-        const response = await axios.post('/api/scans/scan-image/', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            }
+        const reader = new FileReader()
+
+        await new Promise((resolve, reject) => {
+            reader.onload = resolve
+            reader.onerror = reject
+            reader.readAsDataURL(file)
         })
 
-        if (response.data) {
-            lastScan.value = response.data
-            showToast('QR-код найден в изображении!', 'success')
+        const imageData = reader.result
+
+        // Декодируем QR-код на фронтенде
+        const qrContent = await decodeQRFromImage(imageData)
+
+        if (qrContent) {
+            // Если QR-код найден, отправляем на бэкенд
+            await processScan(qrContent, 'camera')
             playBeep()
+        } else {
+            showToast('QR-код не обнаружен в изображении. Попробуйте другое изображение.', 'warning')
         }
     } catch (error) {
-        showToast('Не удалось найти QR-код в изображении', 'error')
+        console.error('Error processing uploaded image:', error)
+        showToast('Ошибка обработки изображения', 'error')
+    } finally {
+        // Clear input
+        event.target.value = ''
     }
-
-    // Clear input
-    event.target.value = ''
 }
 
 // Common methods
@@ -406,7 +468,11 @@ const processScan = async (qrContent, source) => {
 
     } catch (error) {
         console.error('Scan error:', error)
-        showToast('Ошибка при обработке QR-кода', 'error')
+        if (error.response && error.response.status === 400) {
+            showToast('Некорректный QR-код', 'error')
+        } else {
+            showToast('Ошибка при обработке QR-кода', 'error')
+        }
     }
 }
 
@@ -435,13 +501,24 @@ const playBeep = () => {
 const loadPrinterStatus = async () => {
     try {
         const response = await axios.get('/api/printers/default')
-        printerName.value = response.data.name
-        printerConnectionType.value = response.data.connection_type
-        printerStatus.value = 'Готов'
-        printerReady.value = true
+
+        // Проверяем, что принтер реальный
+        if (response.data && response.data.id && response.data.id !== 0) {
+            printerName.value = response.data.name
+            printerConnectionType.value = response.data.connection_type
+            printerStatus.value = 'Готов'
+            printerReady.value = true
+        } else {
+            // Если принтера нет, показываем сообщение
+            printerName.value = 'Не настроен'
+            printerConnectionType.value = '-'
+            printerStatus.value = 'Настройте принтер'
+            printerReady.value = false
+        }
     } catch (error) {
         printerStatus.value = 'Недоступен'
         printerReady.value = false
+        printerName.value = 'Ошибка загрузки'
     }
 }
 
@@ -456,9 +533,7 @@ const testPrint = async () => {
 
 const reprint = async (qrContent) => {
     try {
-        await axios.post('/api/scans/print-again/', {
-            qr_content: qrContent
-        })
+        await axios.post('/api/printers/test/')
         showToast('Задание на печать отправлено', 'success')
     } catch (error) {
         showToast('Ошибка при печати', 'error')
@@ -685,6 +760,38 @@ const getStatusClass = (status) => {
 .placeholder-icon {
     font-size: 4rem;
     margin-bottom: 1rem;
+}
+
+.decoder-status {
+    padding: 0.75rem;
+    margin-top: 1rem;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.status-info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.status-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status-warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
 }
 
 .scan-details {
@@ -920,6 +1027,19 @@ const getStatusClass = (status) => {
 
 .toast-info {
     background: #17a2b8;
+}
+
+.quick-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.quick-actions .btn {
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
 }
 
 @keyframes slideIn {

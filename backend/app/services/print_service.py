@@ -14,6 +14,47 @@ class PrintService:
     def __init__(self):
         self.connected_printers = {}
 
+    def auto_detect_printer(self) -> Optional[Dict]:
+        """Автоматическое обнаружение принтера в сети"""
+        try:
+            # Попробуем найти принтер по распространенным IP
+            common_ips = [
+                "192.168.1.100",
+                "192.168.1.101",
+                "192.168.1.102",
+                "192.168.0.100",
+                "192.168.0.101",
+                "192.168.0.102",
+                "10.0.0.100",
+                "10.0.0.101",
+                "10.0.0.102",
+            ]
+
+            for ip in common_ips:
+                for port in [9100, 515, 631]:
+                    if self.test_connection(ip, port):
+                        return {
+                            "ip": ip,
+                            "port": port,
+                            "name": f"Автообнаруженный принтер {ip}",
+                            "type": "network",
+                        }
+        except:
+            pass
+
+        return None
+
+    def test_connection(self, ip: str, port: int, timeout: float = 1.0) -> bool:
+        """Проверить соединение с принтером"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((ip, port))
+            sock.close()
+            return result == 0
+        except:
+            return False
+
     async def print_to_network_printer(
         self, qr_content: str, printer_ip: str, port: int = 9100
     ) -> bool:
