@@ -1,0 +1,72 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: qr-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: qr_system
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - qr-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: qr-backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://user:password@mysql:3306/qr_system
+      SECRET_KEY: your-production-secret-key-change-this
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - qr-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: qr-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - qr-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: qr-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - qr-network
+    restart: unless-stopped
+
+networks:
+  qr-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
