@@ -116,6 +116,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { decodeQRFromVideo } from '@/libs/qr-decoder'
 
 const videoElement = ref(null)
 const scannerVideoElement = ref(null)
@@ -199,19 +200,49 @@ const stopCamera = () => {
     isScanning.value = false
 }
 
-const startQrScanning = () => {
-    // Эмуляция сканирования QR-кода
-    // В реальности здесь должна быть библиотека для распознавания QR
-    scanInterval = setInterval(() => {
-        if (!videoElement.value || !connectCameraStream) return
+const scanFrame = async () => {
+    if (!videoElement.value || isScanning.value) return
 
-        // Для демонстрации эмулируем сканирование при вводе ID
-        if (manualSessionId.value) {
-            connectToSession(manualSessionId.value)
-            manualSessionId.value = ''
+    try {
+        const qrData = await decodeQRFromVideo(videoElement.value)
+
+        if (qrData) {
+            console.log('QR Code detected:', qrData)
+            isScanning.value = true
+
+            try {
+                // Пытаемся распарсить как JSON
+                const parsedData = JSON.parse(qrData)
+
+                if (parsedData.sessionId && parsedData.type === 'remote_scanner_connect') {
+                    console.log('Valid connection QR detected')
+                    await connectToSession(parsedData.sessionId)
+                    return // Останавливаем сканирование после успешного подключения
+                }
+            } catch (e) {
+                // Если не JSON, проверяем как простой sessionId
+                if (qrData.startsWith('rs_')) {
+                    console.log('Raw sessionId detected:', qrData)
+                    await connectToSession(qrData)
+                    return
+                }
+            }
         }
-    }, 1000)
+
+        // Продолжаем сканирование
+        if (isConnected.value === false) {
+            requestAnimationFrame(scanFrame)
+        }
+    } catch (error) {
+        console.error('Scanning error:', error)
+        if (isConnected.value === false) {
+            setTimeout(() => requestAnimationFrame(scanFrame), 100)
+        }
+    }
 }
+
+// Запускаем сканирование
+scanFrame()
 
 const connectManually = () => {
     if (manualSessionId.value.trim()) {
@@ -221,50 +252,100 @@ const connectManually = () => {
 
 const connectToSession = async (sessionId) => {
     try {
-        if (!sessionId.startsWith('rs_')) {
+        if (!sessionId) {
+            alert('Не указан ID сессии')
+            return
+        }
+
+        // Очищаем предыдущий sessionId для безопасности
+        const cleanSessionId = sessionId.trim()
+
+        if (!cleanSessionId.startsWith('rs_')) {
             alert('Неверный формат ID сессии. Должен начинаться с rs_')
             return
         }
 
-        currentSessionId.value = sessionId
+        currentSessionId.value = cleanSessionId
 
-        // Подключаемся к WebSocket как клиент
+        // Определяем WebSocket URL
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.hostname
-        const port = window.location.port ? `:${window.location.port}` : ''
-        const wsUrl = `${protocol}//${host}${port}/ws/remote-scanner/${sessionId}/client`
+
+        // Для локальной разработки
+        let wsUrl
+        if (host === 'localhost' || host === '127.0.0.1') {
+            wsUrl = `${protocol}//${host}:8003/ws/remote-scanner/${cleanSessionId}/client`
+        } else {
+            // Для продакшена
+            const port = window.location.port ? `:${window.location.port}` : ''
+            wsUrl = `${protocol}//${host}${port}/ws/remote-scanner/${cleanSessionId}/client`
+        }
+
+        console.log('Connecting to WebSocket:', wsUrl)
+
+        // Закрываем предыдущее соединение, если есть
+        if (wsConnection) {
+            wsConnection.close()
+        }
 
         wsConnection = new WebSocket(wsUrl)
 
         wsConnection.onopen = () => {
-            console.log('Connected to computer as client')
+            console.log('✅ Connected to computer as client')
             isConnected.value = true
-            stopCamera()
+            isScanning.value = false
             playBeep()
-            alert('Подключено к компьютеру! Теперь сканируйте QR-коды товаров.')
+
+            // Отправляем подтверждение подключения
+            const connectMessage = {
+                type: 'connect',
+                session_id: cleanSessionId,
+                device_type: 'client',
+                status: 'connected'
+            }
+            wsConnection.send(JSON.stringify(connectMessage))
+
+            alert('✅ Подключено к компьютеру! Теперь сканируйте QR-коды товаров.')
         }
 
         wsConnection.onmessage = (event) => {
-            const message = JSON.parse(event.data)
-            console.log('Message from computer:', message)
+            try {
+                const message = JSON.parse(event.data)
+                console.log('Message from computer:', message)
+
+                if (message.type === 'status') {
+                    if (message.status === 'host_connected') {
+                        console.log('Host is connected')
+                    }
+                }
+            } catch (error) {
+                console.error('Error parsing message:', error)
+            }
         }
 
         wsConnection.onerror = (error) => {
-            console.error('WebSocket error:', error)
-            alert('Ошибка подключения к компьютеру')
+            console.error('❌ WebSocket error:', error)
+            alert('Ошибка подключения к компьютеру. Проверьте сеть.')
             isConnected.value = false
         }
 
-        wsConnection.onclose = () => {
-            console.log('Disconnected from computer')
+        wsConnection.onclose = (event) => {
+            console.log('WebSocket closed:', event.code, event.reason)
             isConnected.value = false
             currentSessionId.value = ''
-            startCamera()
+
+            // Перезапускаем камеру для сканирования новых QR-кодов
+            setTimeout(() => {
+                if (!isConnected.value) {
+                    startCamera()
+                }
+            }, 1000)
         }
 
     } catch (error) {
         console.error('Connection error:', error)
         alert(`Ошибка подключения: ${error.message}`)
+        isConnected.value = false
     }
 }
 

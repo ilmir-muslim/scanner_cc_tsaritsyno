@@ -85,34 +85,46 @@ manager = ConnectionManager()
 @router.websocket("/remote-scanner/{session_id}/{device_type}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, device_type: str):
     try:
-        # Подключаем устройство
+        await websocket.accept()
+        print(f"✅ WebSocket connection accepted: {session_id} - {device_type}")
+
         await manager.connect(websocket, session_id, device_type)
 
         # Отправляем подтверждение подключения
-        await manager.send_message(
-            websocket,
-            WebSocketMessage(
-                type="connect",
-                session_id=session_id,
-                device_type=device_type,
-                status="connected",
-            ),
+        await websocket.send_json(
+            {
+                "type": "connect",
+                "session_id": session_id,
+                "device_type": device_type,
+                "status": "connected",
+                "timestamp": datetime.now().isoformat(),
+            }
         )
 
         # Ожидаем сообщения
         while True:
-            data = await websocket.receive_json()
-            message = WebSocketMessage(**data)
+            try:
+                data = await websocket.receive_json()
+                print(f"Received message: {data}")
 
-            if message.type == "scan":
-                # Пересылаем сканирование от клиента к хосту
-                if device_type == "client" and message.qr_content:
-                    await manager.forward_scan(session_id, message.qr_content, "client")
+                if data.get("type") == "scan" and data.get("qr_content"):
+                    # Пересылаем сканирование
+                    await manager.forward_scan(
+                        session_id, data["qr_content"], device_type
+                    )
 
-            elif message.type == "disconnect":
+                elif data.get("type") == "ping":
+                    # Отправляем pong для поддержания соединения
+                    await websocket.send_json(
+                        {"type": "pong", "timestamp": datetime.now().isoformat()}
+                    )
+
+            except Exception as e:
+                print(f"Error processing message: {e}")
                 break
 
     except WebSocketDisconnect:
+        print(f"WebSocket disconnected: {session_id} - {device_type}")
         await manager.disconnect(session_id, device_type)
     except Exception as e:
         print(f"WebSocket error: {e}")

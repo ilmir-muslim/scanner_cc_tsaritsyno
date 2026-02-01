@@ -321,18 +321,32 @@ const generateRemoteSession = async () => {
         const sessionId = 'rs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
         remoteSessionId.value = sessionId
 
-        // Генерируем QR-код
-        const wsUrl = `ws://${window.location.host}/ws/remote-scanner/${sessionId}/client`
-        remoteQrCode.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(JSON.stringify({
+        // Создаем данные для QR-кода
+        const qrData = {
             sessionId: sessionId,
-            type: 'remote_scanner_connect'
-        }))}`
+            type: 'remote_scanner_connect',
+            timestamp: new Date().toISOString(),
+            url: window.location.hostname
+        }
+
+        const qrContent = JSON.stringify(qrData)
+
+        // Генерируем QR-код
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrContent)}&format=png&margin=10&color=0-0-0&bgcolor=255-255-255`
+
+        // Альтернативно, можно использовать локальную генерацию QR-кода
+        // const qrCodeUrl = `/api/generate-qr?data=${encodeURIComponent(qrContent)}`
+
+        remoteQrCode.value = qrCodeUrl
 
         // Подключаемся к WebSocket как хост
         connectWebSocket(sessionId, 'host')
 
+        alert('✅ QR-код для подключения создан! Отсканируйте его на телефоне.')
+
     } catch (error) {
         console.error('Error generating remote session:', error)
+        alert('Ошибка создания подключения: ' + error.message)
     }
 }
 

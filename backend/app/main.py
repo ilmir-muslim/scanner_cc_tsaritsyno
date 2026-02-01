@@ -7,6 +7,7 @@ from .database import engine, Base
 from .config import settings
 from .routers import scans, printers, print_router
 from .routers import remote_scanner
+from .routers import qr_generator
 
 
 @asynccontextmanager
@@ -37,6 +38,7 @@ app.include_router(printers.router)
 app.include_router(print_router.router)
 app.include_router(remote_scanner.router)
 app.include_router(remote_scanner.router)
+app.include_router(qr_generator.router)
 
 
 @app.get("/")
