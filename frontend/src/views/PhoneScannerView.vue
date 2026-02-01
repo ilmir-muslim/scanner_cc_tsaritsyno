@@ -5,54 +5,30 @@
             <p>Сканируйте QR-коды и отправляйте их на печать на компьютере</p>
         </div>
 
-        <!-- Состояние: запрос разрешения камеры -->
-        <div v-if="cameraPermission === 'prompt'" class="permission-section">
-            <div class="permission-card">
-                <div class="permission-icon">📷</div>
-                <h3>Требуется доступ к камере</h3>
-                <p>Для работы сканера необходимо разрешить доступ к камере вашего устройства</p>
+        <!-- Камера не включена -->
+        <div v-if="!isCameraActive" class="camera-off-section">
+            <div class="camera-off-card">
+                <div class="camera-off-icon">📷</div>
+                <h3>Камера не активна</h3>
+                <p>Для работы сканера необходимо включить камеру</p>
 
-                <button @click="requestCameraPermission" class="btn btn-primary btn-lg">
-                    Разрешить доступ к камере
+                <button @click="activateCamera" class="btn btn-primary btn-lg">
+                    Включить камеру
                 </button>
 
-                <div class="permission-tip">
-                    <p><strong>Если доступ не запрашивается автоматически:</strong></p>
-                    <ol>
-                        <li>Проверьте настройки браузера</li>
-                        <li>Разрешите доступ к камере вручную</li>
-                        <li>Обновите страницу</li>
-                    </ol>
+                <div class="camera-tips">
+                    <p><strong>Советы:</strong></p>
+                    <ul>
+                        <li>Разрешите доступ к камере в диалоге браузера</li>
+                        <li>Убедитесь, что камера не используется другим приложением</li>
+                        <li>Обновите страницу при проблемах</li>
+                    </ul>
                 </div>
             </div>
         </div>
 
-        <!-- Состояние: доступ к камере запрещен -->
-        <div v-else-if="cameraPermission === 'denied'" class="permission-section">
-            <div class="permission-card error">
-                <div class="permission-icon">❌</div>
-                <h3>Доступ к камере запрещен</h3>
-                <p>Невозможно использовать камеру. Разрешите доступ к камере в настройках браузера.</p>
-
-                <div class="error-steps">
-                    <h4>Как разрешить доступ:</h4>
-                    <ol>
-                        <li>Откройте настройки браузера</li>
-                        <li>Найдите "Настройки сайта" или "Разрешения"</li>
-                        <li>Найдите этот сайт в списке</li>
-                        <li>Разрешите доступ к камере</li>
-                        <li>Обновите страницу</li>
-                    </ol>
-                </div>
-
-                <button @click="checkCameraPermission" class="btn btn-secondary">
-                    Проверить снова
-                </button>
-            </div>
-        </div>
-
-        <!-- Состояние: доступ к камере разрешен, но не подключено -->
-        <div v-else-if="!isConnected && cameraPermission === 'granted'" class="connect-section">
+        <!-- Камера активна, не подключено -->
+        <div v-else-if="!isConnected" class="connect-section">
             <div class="connect-card">
                 <h3>Подключение к компьютеру</h3>
                 <p>Отсканируйте QR-код с компьютера для подключения</p>
@@ -65,56 +41,60 @@
                     </div>
                 </div>
 
+                <div class="camera-controls">
+                    <button @click="toggleCamera" class="btn btn-danger">
+                        🔴 Выключить камеру
+                    </button>
+                    <button @click="switchCamera" class="btn btn-secondary">
+                        🔄 Сменить камеру
+                    </button>
+                </div>
+
                 <div class="connection-status">
-                    <div v-if="isScanning" class="status-scanning">
+                    <div class="status-waiting">
                         <span class="status-icon">🔍</span>
-                        <span>Сканирую QR-код подключения...</span>
-                    </div>
-                    <div v-else class="status-waiting">
-                        <span class="status-icon">📷</span>
-                        <span>Наведите камеру на QR-код с компьютера</span>
+                        <span>Сканирование QR-кода подключения...</span>
                     </div>
                 </div>
 
                 <div class="manual-connect">
                     <p>Или введите ID подключения вручную:</p>
                     <div class="manual-input">
-                        <input v-model="manualSessionId" placeholder="rs_123456789_abc123" />
+                        <input v-model="manualSessionId" placeholder="Введите ID подключения"
+                            @keyup.enter="connectManually" />
                         <button @click="connectManually" class="btn btn-primary" :disabled="!manualSessionId.trim()">
                             Подключиться
                         </button>
                     </div>
                 </div>
-
-                <div class="camera-info">
-                    <p><small>Камера: {{ cameraInfo.device || 'Не выбрана' }}</small></p>
-                    <button @click="switchCamera" class="btn btn-small">
-                        🔄 Сменить камеру
-                    </button>
-                </div>
             </div>
         </div>
 
-        <!-- Состояние: подключено к компьютеру -->
-        <div v-else-if="isConnected" class="scanner-section">
+        <!-- Подключено к компьютеру -->
+        <div v-else class="scanner-section">
             <div class="connection-info">
                 <div class="info-card">
-                    <h3>✅ Подключено к компьютеру</h3>
-                    <p>Теперь сканируйте QR-коды товаров</p>
+                    <div class="info-header">
+                        <h3>✅ Подключено к компьютеру</h3>
+                        <button @click="disconnect" class="btn btn-small btn-danger">
+                            ✖️ Отключиться
+                        </button>
+                    </div>
+                    <p>Сканируйте QR-коды товаров</p>
                     <div class="session-info">
                         <strong>Сессия:</strong> <code>{{ currentSessionId }}</code>
                     </div>
                     <div class="connection-stats">
-                        <span>Отправлено: {{ sentScansCount }} сканов</span>
-                        <span>Ошибок: {{ errorScansCount }}</span>
+                        <span>📤 Отправлено: {{ sentScansCount }}</span>
+                        <span>❌ Ошибок: {{ errorScansCount }}</span>
                     </div>
                 </div>
             </div>
 
             <div class="camera-section">
-                <div class="camera-controls">
-                    <button @click="toggleScannerCamera"
-                        :class="['camera-toggle-btn', isScannerActive ? 'btn-danger' : 'btn-success']">
+                <div class="scanner-controls">
+                    <button @click="toggleScanner"
+                        :class="['scanner-toggle-btn', isScannerActive ? 'btn-danger' : 'btn-success']">
                         {{ isScannerActive ? '⏸️ Остановить сканирование' : '▶️ Начать сканирование' }}
                     </button>
 
@@ -122,8 +102,8 @@
                         🔍 Тестовое сканирование
                     </button>
 
-                    <button @click="disconnect" class="btn btn-secondary">
-                        ✖️ Отключиться
+                    <button @click="toggleCamera" class="btn btn-secondary">
+                        📷 Управление камерой
                     </button>
                 </div>
 
@@ -132,285 +112,304 @@
                     <div class="scan-overlay">
                         <div class="scan-frame"></div>
                         <div class="scan-text">Наведите на QR-код товара</div>
+                        <div class="scan-counter">Сканов: {{ scans.length }}</div>
                     </div>
 
                     <div class="scanner-status">
                         <span class="scanner-icon">📸</span>
-                        <span class="scanner-text">Сканер активен</span>
-                        <span class="scanner-count">Сканов: {{ scans.length }}</span>
+                        <span class="scanner-text active">Сканирует...</span>
                     </div>
                 </div>
+
                 <div v-else class="scanner-inactive">
                     <div class="inactive-icon">⏸️</div>
-                    <p>Сканирование остановлено</p>
+                    <h4>Сканирование остановлено</h4>
                     <p>Нажмите "Начать сканирование" чтобы продолжить</p>
+                    <button @click="testScan" class="btn btn-info btn-small">
+                        🔍 Протестировать без камеры
+                    </button>
                 </div>
             </div>
 
             <div class="scans-log">
                 <div class="log-header">
-                    <h4>История сканирований:</h4>
-                    <button @click="clearScans" class="btn btn-small" :disabled="scans.length === 0">
-                        🗑️ Очистить
-                    </button>
+                    <h4>📋 История сканирований</h4>
+                    <div class="log-controls">
+                        <button @click="clearScans" class="btn btn-small btn-danger" :disabled="scans.length === 0">
+                            🗑️ Очистить
+                        </button>
+                        <button @click="toggleAutoScroll" class="btn btn-small"
+                            :class="autoScroll ? 'btn-success' : 'btn-secondary'">
+                            {{ autoScroll ? '🔒 Автопрокрутка: ВКЛ' : '🔓 Автопрокрутка: ВЫКЛ' }}
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="scans.length === 0" class="empty-scans">
                     <div class="empty-icon">📭</div>
-                    <p>Сканируйте QR-коды товаров, чтобы отправить их на печать</p>
-                    <p><small>История сканирований появится здесь</small></p>
+                    <p>История сканирований пуста</p>
+                    <p><small>Отсканируйте QR-коды, чтобы они появились здесь</small></p>
                 </div>
-                <div v-else class="scans-list">
+
+                <div v-else class="scans-list" ref="scansList">
                     <div v-for="(scan, index) in scans" :key="index" class="scan-item"
-                        :class="{ 'scan-error': !scan.sent }">
+                        :class="{ 'scan-error': !scan.sent }"
+                        :title="scan.error ? `Ошибка: ${scan.error}` : 'Успешно отправлено'">
                         <span class="scan-index">#{{ scans.length - index }}</span>
                         <span class="scan-time">{{ formatTime(scan.timestamp) }}</span>
-                        <span class="scan-content" :title="scan.content">{{ truncateText(scan.content, 25) }}</span>
+                        <span class="scan-content">{{ scan.content }}</span>
                         <span :class="['scan-status', scan.sent ? 'status-sent' : 'status-error']">
-                            {{ scan.sent ? '✓ Отправлено' : '✗ Ошибка' }}
+                            {{ scan.sent ? '✓' : '✗' }}
                         </span>
                     </div>
+                </div>
+
+                <div v-if="scans.length > 0" class="log-summary">
+                    <span>Всего: {{ scans.length }} | Успешно: {{ sentScansCount }} | Ошибок:
+                        {{ errorScansCount }}</span>
                 </div>
             </div>
         </div>
 
         <!-- Статус бар -->
         <div class="status-bar">
-            <div class="status-item">
-                <span class="status-icon">{{ isConnected ? '📱✅' : '📱❌' }}</span>
-                <span class="status-text">{{ isConnected ? 'Подключено' : 'Не подключено' }}</span>
+            <div class="status-item" @click="toggleCamera" style="cursor: pointer;">
+                <span class="status-icon">{{ isCameraActive ? '📹' : '📷' }}</span>
+                <span class="status-text">{{ isCameraActive ? 'Камера: ВКЛ' : 'Камера: ВЫКЛ' }}</span>
             </div>
-            <div class="status-item">
-                <span class="status-icon">{{ isScannerActive ? '📸' : '📷' }}</span>
-                <span class="status-text">{{ isScannerActive ? 'Сканирует' : 'Камера' }}</span>
+
+            <div class="status-item" @click="toggleScanner" style="cursor: pointer;">
+                <span class="status-icon">{{ isScannerActive ? '🔍' : '⏸️' }}</span>
+                <span class="status-text">{{ isScannerActive ? 'Сканирует' : 'Пауза' }}</span>
             </div>
+
             <div class="status-item">
-                <span class="status-icon">🔋</span>
-                <span class="status-text">{{ batteryLevel }}%</span>
+                <span class="status-icon">📤</span>
+                <span class="status-text">{{ sentScansCount }}</span>
             </div>
         </div>
 
-        <!-- Уведомления -->
-        <div v-if="notification.show" :class="['notification', notification.type]">
-            {{ notification.message }}
-            <button @click="notification.show = false" class="notification-close">×</button>
+        <!-- Уведомление -->
+        <div v-if="notification.show" :class="['notification', notification.type]" @click="notification.show = false">
+            <span class="notification-icon">
+                {{ notification.type === 'success' ? '✅' :
+                    notification.type === 'error' ? '❌' : 'ℹ️' }}
+            </span>
+            <span class="notification-message">{{ notification.message }}</span>
+            <span class="notification-close">×</span>
+        </div>
+
+        <!-- Прогресс -->
+        <div v-if="isProcessing" class="processing-overlay">
+            <div class="processing-spinner"></div>
+            <div class="processing-text">Обработка...</div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 
+// Refs
 const videoElement = ref(null)
 const scannerVideoElement = ref(null)
+const scansList = ref(null)
+
+const isCameraActive = ref(false)
 const isConnected = ref(false)
-const isScanning = ref(false)
 const isScannerActive = ref(false)
-const cameraPermission = ref('prompt') // 'prompt', 'granted', 'denied'
+const isProcessing = ref(false)
+const autoScroll = ref(true)
+
 const manualSessionId = ref('')
 const currentSessionId = ref('')
 const scans = ref([])
-const cameraInfo = ref({ device: null })
-const batteryLevel = ref(100)
-
 const notification = ref({
     show: false,
     message: '',
-    type: 'info' // 'info', 'success', 'error'
+    type: 'info'
 })
 
-let connectCameraStream = null
-let scannerCameraStream = null
+// WebSocket и камера
 let wsConnection = null
+let cameraStream = null
+let scannerStream = null
 let scanInterval = null
 let cameraDevices = []
+let currentCameraIndex = 0
 
-onMounted(async () => {
-    checkCameraPermission()
-    checkBatteryLevel()
-})
+// Запрос доступа к камере
+const activateCamera = async () => {
+    if (isCameraActive.value) return
 
-onUnmounted(() => {
-    stopConnectCamera()
-    stopScannerCamera()
-    disconnectWebSocket()
-    if (scanInterval) clearInterval(scanInterval)
-})
+    isProcessing.value = true
 
-const checkCameraPermission = async () => {
     try {
-        const permission = await navigator.permissions.query({ name: 'camera' })
-        cameraPermission.value = permission.state
-
-        permission.onchange = () => {
-            cameraPermission.value = permission.state
-            if (permission.state === 'granted') {
-                startConnectCamera()
-            } else {
-                stopConnectCamera()
-                stopScannerCamera()
-            }
-        }
-
-        if (permission.state === 'granted') {
-            startConnectCamera()
-        }
-    } catch (error) {
-        console.error('Permission check error:', error)
-        // Fallback для старых браузеров
-        cameraPermission.value = 'prompt'
-    }
-}
-
-const requestCameraPermission = async () => {
-    try {
-        // Запрашиваем разрешение через getUserMedia
+        // Прямой запрос доступа к камере
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
+            video: {
+                facingMode: { ideal: 'environment' }, // Используем заднюю камеру
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+            },
+            audio: false
         })
 
-        // Останавливаем стрим, так как мы только проверяли разрешение
-        stream.getTracks().forEach(track => track.stop())
+        cameraStream = stream
 
-        cameraPermission.value = 'granted'
-        showNotification('Доступ к камере разрешен', 'success')
-        startConnectCamera()
+        if (videoElement.value) {
+            videoElement.value.srcObject = stream
+            videoElement.value.play().catch(e => console.log('Play error:', e))
+        }
+
+        isCameraActive.value = true
+        showNotification('Камера включена', 'success')
+
+        // Получаем список камер
+        await getCameraDevices()
+
+        // Запускаем сканирование QR-кода подключения
+        startConnectionScanning()
 
     } catch (error) {
-        console.error('Camera permission error:', error)
+        console.error('Camera activation error:', error)
+
+        let errorMessage = 'Не удалось включить камеру'
 
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-            cameraPermission.value = 'denied'
-            showNotification('Доступ к камере запрещен', 'error')
+            errorMessage = 'Доступ к камере запрещен. Разрешите доступ в настройках браузера.'
         } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-            showNotification('Камера не найдена', 'error')
+            errorMessage = 'Камера не найдена'
         } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-            showNotification('Ошибка доступа к камере', 'error')
-        } else {
-            showNotification('Неизвестная ошибка камеры', 'error')
+            errorMessage = 'Ошибка доступа к камере. Убедитесь, что она не используется другим приложением.'
+        } else if (error.name === 'OverconstrainedError') {
+            errorMessage = 'Требуемые параметры камеры недоступны'
+        } else if (error.name === 'TypeError') {
+            errorMessage = 'Некорректные параметры камеры'
         }
+
+        showNotification(errorMessage, 'error')
+
+    } finally {
+        isProcessing.value = false
     }
 }
 
+// Выключение камеры
+const toggleCamera = () => {
+    if (isCameraActive.value) {
+        stopCamera()
+        showNotification('Камера выключена', 'info')
+    } else {
+        activateCamera()
+    }
+}
+
+const stopCamera = () => {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop())
+        cameraStream = null
+    }
+
+    if (videoElement.value) {
+        videoElement.value.srcObject = null
+    }
+
+    if (scanInterval) {
+        clearInterval(scanInterval)
+        scanInterval = null
+    }
+
+    isCameraActive.value = false
+    isScannerActive.value = false
+}
+
+// Смена камеры
+const switchCamera = async () => {
+    if (!cameraStream || cameraDevices.length < 2) {
+        showNotification('Доступна только одна камера', 'info')
+        return
+    }
+
+    isProcessing.value = true
+
+    try {
+        // Останавливаем текущую камеру
+        cameraStream.getTracks().forEach(track => track.stop())
+
+        // Переключаемся на следующую камеру
+        currentCameraIndex = (currentCameraIndex + 1) % cameraDevices.length
+        const deviceId = cameraDevices[currentCameraIndex].deviceId
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                deviceId: { exact: deviceId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        })
+
+        cameraStream = stream
+
+        if (videoElement.value) {
+            videoElement.value.srcObject = stream
+            videoElement.value.play().catch(e => console.log('Play error:', e))
+        }
+
+        showNotification('Камера изменена', 'success')
+
+    } catch (error) {
+        console.error('Camera switch error:', error)
+        showNotification('Ошибка смены камеры', 'error')
+    } finally {
+        isProcessing.value = false
+    }
+}
+
+// Получение списка камер
 const getCameraDevices = async () => {
     try {
         const devices = await navigator.mediaDevices.enumerateDevices()
         cameraDevices = devices.filter(device => device.kind === 'videoinput')
-
-        if (cameraDevices.length > 0) {
-            cameraInfo.value.device = cameraDevices[0].label || 'Основная камера'
-        }
-
         return cameraDevices
     } catch (error) {
-        console.error('Error enumerating devices:', error)
+        console.error('Error getting camera devices:', error)
         return []
     }
 }
 
-const switchCamera = async () => {
-    if (cameraDevices.length < 2) {
-        showNotification('Только одна камера доступна', 'info')
-        return
-    }
-
-    stopConnectCamera()
-    await startConnectCamera(true)
-}
-
-const startConnectCamera = async (switchCamera = false) => {
-    try {
-        await getCameraDevices()
-
-        const constraints = {
-            video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        }
-
-        connectCameraStream = await navigator.mediaDevices.getUserMedia(constraints)
-
-        if (videoElement.value) {
-            videoElement.value.srcObject = connectCameraStream
-            videoElement.value.play()
-        }
-
-        // Обновляем информацию о камере
-        const tracks = connectCameraStream.getVideoTracks()
-        if (tracks.length > 0) {
-            const settings = tracks[0].getSettings()
-            cameraInfo.value = {
-                device: tracks[0].label || 'Камера',
-                resolution: `${settings.width || 0}x${settings.height || 0}`,
-                frameRate: settings.frameRate || 0
-            }
-        }
-
-        // Запускаем сканирование QR-кода подключения
-        startQrScanning()
-
-    } catch (error) {
-        console.error('Error starting camera:', error)
-
-        if (error.name === 'NotAllowedError') {
-            cameraPermission.value = 'denied'
-            showNotification('Разрешите доступ к камере в настройках', 'error')
-        } else {
-            showNotification(`Ошибка камеры: ${error.message}`, 'error')
-        }
-    }
-}
-
-const stopConnectCamera = () => {
-    if (connectCameraStream) {
-        connectCameraStream.getTracks().forEach(track => track.stop())
-        connectCameraStream = null
-    }
-    if (videoElement.value) {
-        videoElement.value.srcObject = null
-    }
+// Сканирование QR-кода для подключения
+const startConnectionScanning = () => {
     if (scanInterval) clearInterval(scanInterval)
-    isScanning.value = false
-}
 
-const startQrScanning = () => {
-    scanInterval = setInterval(async () => {
-        if (!videoElement.value || !connectCameraStream || !isScanning.value) return
+    scanInterval = setInterval(() => {
+        if (!isCameraActive.value || isConnected.value) return
 
-        try {
-            // Эмуляция сканирования QR-кода
-            // В реальном проекте здесь должна быть логика распознавания QR-кодов
-            if (manualSessionId.value) {
-                await connectToSession(manualSessionId.value)
-                manualSessionId.value = ''
-            }
-
-        } catch (error) {
-            console.error('QR scan error:', error)
+        // В реальном проекте здесь должен быть код распознавания QR-кода
+        // Для демонстрации используем ручной ввод
+        if (manualSessionId.value.trim()) {
+            connectToSession(manualSessionId.value.trim())
         }
     }, 1000)
 }
 
+// Подключение к сессии
 const connectManually = () => {
     if (manualSessionId.value.trim()) {
-        isScanning.value = true
         connectToSession(manualSessionId.value.trim())
     }
 }
 
 const connectToSession = async (sessionId) => {
+    if (isConnected.value) return
+
+    isProcessing.value = true
+
     try {
-        if (!sessionId.startsWith('rs_')) {
-            showNotification('Неверный формат ID сессии', 'error')
-            return
-        }
-
         currentSessionId.value = sessionId
-        isScanning.value = true
 
-        // Подключаемся к WebSocket как клиент
+        // Подключаемся к WebSocket
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.host
         const wsUrl = `${protocol}//${host}/ws/remote-scanner/${sessionId}/client`
@@ -418,211 +417,244 @@ const connectToSession = async (sessionId) => {
         wsConnection = new WebSocket(wsUrl)
 
         wsConnection.onopen = () => {
-            console.log('Connected to computer as client')
+            console.log('WebSocket connected')
             isConnected.value = true
-            isScanning.value = false
-            stopConnectCamera()
-            showNotification('Подключено к компьютеру', 'success')
+            manualSessionId.value = ''
+
+            // Останавливаем сканирование подключения
+            if (scanInterval) {
+                clearInterval(scanInterval)
+                scanInterval = null
+            }
+
+            showNotification('Подключено к компьютеру!', 'success')
             playBeep()
         }
 
         wsConnection.onmessage = (event) => {
-            const message = JSON.parse(event.data)
-            console.log('Message from computer:', message)
+            try {
+                const message = JSON.parse(event.data)
+                console.log('WebSocket message:', message)
 
-            if (message.type === 'status') {
-                showNotification(`Статус: ${message.status}`, 'info')
+                if (message.type === 'status') {
+                    showNotification(`Статус: ${message.status}`, 'info')
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error)
             }
         }
 
         wsConnection.onerror = (error) => {
             console.error('WebSocket error:', error)
-            showNotification('Ошибка подключения к компьютеру', 'error')
-            isConnected.value = false
+            showNotification('Ошибка подключения', 'error')
         }
 
         wsConnection.onclose = () => {
-            console.log('Disconnected from computer')
+            console.log('WebSocket closed')
             isConnected.value = false
             currentSessionId.value = ''
+            wsConnection = null
+
+            // Возвращаемся к сканированию подключения
+            if (isCameraActive.value && !isConnected.value) {
+                startConnectionScanning()
+            }
+
             showNotification('Отключено от компьютера', 'info')
-            startConnectCamera()
         }
+
+        // Таймаут подключения
+        setTimeout(() => {
+            if (!isConnected.value && wsConnection) {
+                wsConnection.close()
+                showNotification('Таймаут подключения', 'error')
+            }
+        }, 10000)
 
     } catch (error) {
         console.error('Connection error:', error)
-        isConnected.value = false
-        isScanning.value = false
         showNotification(`Ошибка: ${error.message}`, 'error')
+        isConnected.value = false
+        currentSessionId.value = ''
+    } finally {
+        isProcessing.value = false
     }
 }
 
-const toggleScannerCamera = async () => {
+// Управление сканированием товаров
+const toggleScanner = () => {
+    if (!isConnected.value) {
+        showNotification('Сначала подключитесь к компьютеру', 'error')
+        return
+    }
+
     if (isScannerActive.value) {
-        stopScannerCamera()
+        stopScanner()
         showNotification('Сканирование остановлено', 'info')
     } else {
-        await startScannerCamera()
+        startScanner()
         showNotification('Сканирование начато', 'success')
     }
 }
 
-const startScannerCamera = async () => {
-    try {
-        const constraints = {
-            video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        }
+const startScanner = () => {
+    if (!isConnected.value || isScannerActive.value) return
 
-        scannerCameraStream = await navigator.mediaDevices.getUserMedia(constraints)
+    isScannerActive.value = true
 
-        if (scannerVideoElement.value) {
-            scannerVideoElement.value.srcObject = scannerCameraStream
-            scannerVideoElement.value.play()
-            isScannerActive.value = true
-        }
-
-        // Запускаем сканирование QR-кодов товаров
-        startProductScanning()
-
-    } catch (error) {
-        console.error('Error starting scanner camera:', error)
-        showNotification(`Ошибка камеры: ${error.message}`, 'error')
-        isScannerActive.value = false
-    }
-}
-
-const stopScannerCamera = () => {
-    if (scannerCameraStream) {
-        scannerCameraStream.getTracks().forEach(track => track.stop())
-        scannerCameraStream = null
-    }
-    if (scannerVideoElement.value) {
-        scannerVideoElement.value.srcObject = null
-    }
-    isScannerActive.value = false
-}
-
-const startProductScanning = () => {
-    // Эмуляция сканирования QR-кодов товаров
-    // В реальном проекте здесь должна быть библиотека для распознавания QR-кодов
-    const productScanInterval = setInterval(() => {
+    // В реальном проекте здесь должна быть логика сканирования QR-кодов
+    // Для демонстрации эмулируем сканирование
+    const scannerInterval = setInterval(() => {
         if (!isScannerActive.value) {
-            clearInterval(productScanInterval)
+            clearInterval(scannerInterval)
             return
         }
 
-        // Для демонстрации эмулируем сканирование случайного QR-кода каждые 3 секунды
-        if (Math.random() > 0.5) {
+        // Эмуляция случайного сканирования
+        if (Math.random() > 0.7) {
             emulateQrScan()
         }
-    }, 3000)
+    }, 2000)
 }
 
+const stopScanner = () => {
+    isScannerActive.value = false
+}
+
+// Эмуляция сканирования QR-кода
+const emulateQrScan = () => {
+    if (!isConnected.value || !wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+        showNotification('Нет подключения к компьютеру', 'error')
+        return
+    }
+
+    const mockCodes = [
+        'PRODUCT-12345-ABC-' + Date.now(),
+        'ITEM-67890-XYZ-' + Math.random().toString(36).substr(2, 6),
+        'SKU-98765-QWE-' + Date.now().toString(36),
+        'CODE-54321-RTY-' + Math.floor(Math.random() * 10000),
+        'ID-13579-UIO-' + new Date().getTime()
+    ]
+
+    const randomCode = mockCodes[Math.floor(Math.random() * mockCodes.length)]
+    const timestamp = new Date()
+
+    try {
+        const message = {
+            type: 'scan',
+            qr_content: randomCode,
+            timestamp: timestamp.toISOString(),
+            device: 'phone',
+            session_id: currentSessionId.value
+        }
+
+        wsConnection.send(JSON.stringify(message))
+
+        scans.value.unshift({
+            content: randomCode,
+            timestamp: timestamp,
+            sent: true
+        })
+
+        // Автопрокрутка
+        if (autoScroll.value) {
+            nextTick(() => {
+                if (scansList.value) {
+                    scansList.value.scrollTop = 0
+                }
+            })
+        }
+
+        showNotification(`Отсканировано: ${randomCode}`, 'success')
+        playBeep()
+
+    } catch (error) {
+        console.error('Send error:', error)
+
+        scans.value.unshift({
+            content: randomCode,
+            timestamp: timestamp,
+            sent: false,
+            error: error.message
+        })
+
+        showNotification('Ошибка отправки', 'error')
+    }
+
+    // Ограничиваем историю
+    if (scans.value.length > 50) {
+        scans.value = scans.value.slice(0, 50)
+    }
+}
+
+// Тестовое сканирование
 const testScan = () => {
-    if (!isScannerActive.value) {
-        showNotification('Сначала запустите сканирование', 'error')
+    if (!isConnected.value) {
+        showNotification('Сначала подключитесь к компьютеру', 'error')
         return
     }
 
     emulateQrScan()
 }
 
-const emulateQrScan = () => {
-    const mockCodes = [
-        'PRODUCT-12345-ABC',
-        'ITEM-67890-XYZ',
-        'SKU-98765-QWE',
-        'CODE-54321-RTY',
-        'ID-13579-UIO',
-        'LABEL-24680-PLM',
-        'TAG-36912-KNJ',
-        'SCAN-48263-MVB'
-    ]
-
-    const randomCode = mockCodes[Math.floor(Math.random() * mockCodes.length)]
-    const timestamp = new Date()
-
-    // Отправляем на компьютер через WebSocket
-    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
-        const message = {
-            type: 'scan',
-            qr_content: randomCode,
-            timestamp: timestamp.toISOString(),
-            device: 'phone'
-        }
-
-        try {
-            wsConnection.send(JSON.stringify(message))
-
-            scans.value.unshift({
-                content: randomCode,
-                timestamp: timestamp,
-                sent: true
-            })
-
-            showNotification(`Отсканировано: ${truncateText(randomCode, 20)}`, 'success')
-            playBeep()
-
-        } catch (error) {
-            scans.value.unshift({
-                content: randomCode,
-                timestamp: timestamp,
-                sent: false,
-                error: error.message
-            })
-
-            showNotification('Ошибка отправки на компьютер', 'error')
-        }
-    } else {
-        scans.value.unshift({
-            content: randomCode,
-            timestamp: timestamp,
-            sent: false,
-            error: 'Нет подключения'
-        })
-
-        showNotification('Нет подключения к компьютеру', 'error')
-    }
-
-    // Ограничиваем историю 20 записями
-    if (scans.value.length > 20) {
-        scans.value = scans.value.slice(0, 20)
-    }
-}
-
-const sentScansCount = computed(() => {
-    return scans.value.filter(scan => scan.sent).length
-})
-
-const errorScansCount = computed(() => {
-    return scans.value.filter(scan => !scan.sent).length
-})
-
+// Отключение
 const disconnect = () => {
-    disconnectWebSocket()
-    stopScannerCamera()
-    startConnectCamera()
-    showNotification('Отключено от компьютера', 'info')
-}
-
-const disconnectWebSocket = () => {
     if (wsConnection) {
         wsConnection.close()
         wsConnection = null
     }
+
     isConnected.value = false
+    isScannerActive.value = false
     currentSessionId.value = ''
+    manualSessionId.value = ''
+
+    // Возвращаемся к сканированию подключения
+    if (isCameraActive.value) {
+        startConnectionScanning()
+    }
+
+    showNotification('Отключено от компьютера', 'info')
 }
 
+// Очистка истории
 const clearScans = () => {
     scans.value = []
     showNotification('История очищена', 'info')
 }
 
+// Переключение автопрокрутки
+const toggleAutoScroll = () => {
+    autoScroll.value = !autoScroll.value
+    showNotification(`Автопрокрутка: ${autoScroll.value ? 'ВКЛ' : 'ВЫКЛ'}`, 'info')
+}
+
+// Воспроизведение звука
+const playBeep = () => {
+    try {
+        // Простой звук через AudioContext
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        const oscillator = audioContext.createOscillator()
+        const gainNode = audioContext.createGain()
+
+        oscillator.connect(gainNode)
+        gainNode.connect(audioContext.destination)
+
+        oscillator.frequency.value = 800
+        oscillator.type = 'sine'
+
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
+
+        oscillator.start(audioContext.currentTime)
+        oscillator.stop(audioContext.currentTime + 0.1)
+
+    } catch (error) {
+        // Игнорируем ошибки аудио
+    }
+}
+
+// Уведомления
 const showNotification = (message, type = 'info') => {
     notification.value = {
         show: true,
@@ -635,44 +667,8 @@ const showNotification = (message, type = 'info') => {
     }, 3000)
 }
 
-const playBeep = () => {
-    try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-        const oscillator = audioContext.createOscillator()
-        const gainNode = audioContext.createGain()
-
-        oscillator.connect(gainNode)
-        gainNode.connect(audioContext.destination)
-
-        oscillator.frequency.value = 1000
-        oscillator.type = 'sine'
-
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
-
-        oscillator.start(audioContext.currentTime)
-        oscillator.stop(audioContext.currentTime + 0.1)
-    } catch (e) {
-        // Audio not supported
-    }
-}
-
-const checkBatteryLevel = () => {
-    if ('getBattery' in navigator) {
-        navigator.getBattery().then(battery => {
-            batteryLevel.value = Math.round(battery.level * 100)
-
-            battery.addEventListener('levelchange', () => {
-                batteryLevel.value = Math.round(battery.level * 100)
-            })
-        })
-    } else if ('battery' in navigator) {
-        // Для старых браузеров
-        batteryLevel.value = navigator.battery ? Math.round(navigator.battery.level * 100) : 100
-    }
-}
-
-const truncateText = (text, maxLength) => {
+// Форматирование
+const truncateText = (text, maxLength = 30) => {
     if (!text) return ''
     if (text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
@@ -687,116 +683,139 @@ const formatTime = (date) => {
         second: '2-digit'
     })
 }
+
+// Computed
+const sentScansCount = computed(() => {
+    return scans.value.filter(scan => scan.sent).length
+})
+
+const errorScansCount = computed(() => {
+    return scans.value.filter(scan => !scan.sent).length
+})
+
+// Жизненный цикл
+onMounted(() => {
+    // Проверяем, есть ли сохраненная сессия
+    const savedSession = localStorage.getItem('phone_scanner_session')
+    if (savedSession) {
+        manualSessionId.value = savedSession
+    }
+})
+
+onUnmounted(() => {
+    stopCamera()
+
+    if (wsConnection) {
+        wsConnection.close()
+    }
+
+    if (scanInterval) {
+        clearInterval(scanInterval)
+    }
+})
+
+// Watch
+watch(currentSessionId, (newVal) => {
+    if (newVal) {
+        localStorage.setItem('phone_scanner_session', newVal)
+    } else {
+        localStorage.removeItem('phone_scanner_session')
+    }
+})
+
+watch(isConnected, (newVal) => {
+    if (!newVal && isCameraActive.value) {
+        startConnectionScanning()
+    }
+})
 </script>
 
 <style scoped>
 .phone-scanner-view {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
     min-height: 100vh;
-    padding: 1rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #121212;
     color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .header {
     text-align: center;
-    margin-bottom: 1rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .header h1 {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.4rem;
+    margin: 0.5rem 0;
 }
 
 .header p {
     opacity: 0.9;
+    margin: 0;
+    font-size: 0.9rem;
 }
 
-/* Секции разрешений */
-.permission-section,
+/* Камера выключена */
+.camera-off-section,
 .connect-section,
 .scanner-section {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 1.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    flex: 1;
+    padding: 1rem;
 }
 
-.permission-card {
+.camera-off-card {
     text-align: center;
-    padding: 2rem;
+    padding: 2rem 1rem;
+    max-width: 400px;
+    margin: 0 auto;
 }
 
-.permission-card.error {
-    background: rgba(220, 53, 69, 0.1);
-    border-color: rgba(220, 53, 69, 0.3);
-}
-
-.permission-icon {
+.camera-off-icon {
     font-size: 4rem;
     margin-bottom: 1rem;
+    opacity: 0.7;
+}
+
+.camera-off-card h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.3rem;
+}
+
+.camera-off-card p {
+    margin-bottom: 2rem;
     opacity: 0.8;
 }
 
-.permission-card h3 {
-    margin-bottom: 1rem;
-    font-size: 1.3rem;
-}
-
-.permission-card p {
-    margin-bottom: 1.5rem;
-    opacity: 0.9;
-}
-
-.permission-tip,
-.error-steps {
-    margin-top: 1.5rem;
+.camera-tips {
+    margin-top: 2rem;
     padding: 1rem;
     background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
+    border-radius: 10px;
     text-align: left;
 }
 
-.permission-tip ol,
-.error-steps ol {
-    padding-left: 1.5rem;
+.camera-tips ul {
     margin: 0.5rem 0;
+    padding-left: 1.2rem;
 }
 
-.permission-tip li,
-.error-steps li {
-    margin-bottom: 0.5rem;
+.camera-tips li {
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
 }
 
-/* Основной интерфейс подключения */
-.connect-card {
-    text-align: center;
-}
-
-.connect-card h3 {
-    margin-bottom: 0.5rem;
-    font-size: 1.3rem;
-}
-
-.connect-card p {
-    margin-bottom: 1.5rem;
-    opacity: 0.9;
-}
-
+/* Превью камеры */
 .camera-preview,
 .scanner-preview {
     position: relative;
-    margin: 1rem 0;
-    border-radius: 8px;
+    width: 100%;
+    height: 300px;
+    border-radius: 12px;
     overflow: hidden;
-    background: black;
-    min-height: 250px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background: #000;
+    margin: 1rem 0;
 }
 
 .camera-video,
@@ -810,157 +829,102 @@ const formatTime = (date) => {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
 }
 
 .scan-frame {
     width: 70%;
     height: 50%;
-    border: 3px solid #28a745;
-    border-radius: 8px;
-    box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+    border: 3px solid #00ff00;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.7);
 }
 
-.scan-text {
-    margin-top: 1rem;
+.scan-text,
+.scan-counter {
     color: white;
-    font-weight: 500;
-    background: rgba(0, 0, 0, 0.7);
+    margin-top: 1rem;
     padding: 0.5rem 1rem;
+    background: rgba(0, 0, 0, 0.7);
     border-radius: 20px;
-}
-
-.connection-status {
-    margin: 1rem 0;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-}
-
-.status-scanning,
-.status-waiting {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
     font-weight: 500;
 }
 
-.manual-connect {
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
+.scan-counter {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
 }
 
-.manual-input {
+/* Управление камерой */
+.camera-controls,
+.scanner-controls {
     display: flex;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin: 1rem 0;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
-.manual-input input {
-    flex: 1;
-    padding: 0.75rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    font-size: 1rem;
-}
-
-.manual-input input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
-}
-
-.camera-info {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-/* Интерфейс сканирования */
+/* Информация о подключении */
 .connection-info {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 
 .info-card {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
     padding: 1rem;
-    border-radius: 8px;
-    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
 }
 
 .info-card h3 {
-    margin-bottom: 0.5rem;
-    color: #28a745;
+    margin: 0;
+    color: #4CAF50;
+    font-size: 1.2rem;
+}
+
+.info-card p {
+    margin: 0.5rem 0;
+    opacity: 0.8;
 }
 
 .session-info {
     margin: 0.5rem 0;
     padding: 0.5rem;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
-    font-family: monospace;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
     word-break: break-all;
+    font-size: 0.9rem;
 }
 
 .connection-stats {
     display: flex;
-    justify-content: center;
     gap: 1rem;
     margin-top: 0.5rem;
     font-size: 0.9rem;
     opacity: 0.8;
 }
 
-.camera-section {
-    margin-bottom: 1.5rem;
-}
-
-.camera-controls {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.camera-toggle-btn {
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-.scanner-status {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-}
-
+/* Сканер неактивен */
 .scanner-inactive {
     text-align: center;
-    padding: 2rem;
+    padding: 2rem 1rem;
     background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
+    border-radius: 12px;
+    margin: 1rem 0;
 }
 
 .inactive-icon {
@@ -969,11 +933,21 @@ const formatTime = (date) => {
     opacity: 0.5;
 }
 
+.scanner-inactive h4 {
+    margin: 0 0 0.5rem 0;
+}
+
+.scanner-inactive p {
+    margin: 0.5rem 0;
+    opacity: 0.8;
+}
+
 /* История сканирований */
 .scans-log {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
     padding: 1rem;
+    margin-top: 1rem;
 }
 
 .log-header {
@@ -983,35 +957,42 @@ const formatTime = (date) => {
     margin-bottom: 1rem;
 }
 
-.scans-log h4 {
+.log-header h4 {
     margin: 0;
     font-size: 1.1rem;
 }
 
+.log-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
 .empty-scans {
     text-align: center;
-    padding: 2rem;
-    opacity: 0.7;
+    padding: 2rem 1rem;
+    opacity: 0.5;
 }
 
 .empty-icon {
     font-size: 3rem;
     margin-bottom: 1rem;
-    opacity: 0.5;
 }
 
 .scans-list {
     max-height: 300px;
     overflow-y: auto;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
 }
 
 .scan-item {
     display: flex;
     align-items: center;
-    padding: 0.75rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    gap: 0.75rem;
     transition: background 0.2s;
+    cursor: help;
 }
 
 .scan-item:hover {
@@ -1023,132 +1004,219 @@ const formatTime = (date) => {
 }
 
 .scan-item.scan-error {
-    background: rgba(220, 53, 69, 0.1);
+    background: rgba(255, 0, 0, 0.1);
 }
 
 .scan-index {
     min-width: 30px;
+    font-size: 0.8rem;
     opacity: 0.6;
-    font-size: 0.9rem;
+    font-family: monospace;
 }
 
 .scan-time {
     min-width: 70px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     opacity: 0.8;
+    font-family: monospace;
 }
 
 .scan-content {
     flex: 1;
-    font-family: monospace;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
     word-break: break-all;
-    cursor: help;
 }
 
 .scan-status {
-    min-width: 80px;
+    min-width: 30px;
     text-align: center;
-    font-weight: 500;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    font-weight: bold;
+    font-size: 1.2rem;
 }
 
 .status-sent {
-    background: rgba(40, 167, 69, 0.2);
-    color: #28a745;
+    color: #4CAF50;
 }
 
 .status-error {
-    background: rgba(220, 53, 69, 0.2);
-    color: #dc3545;
+    color: #f44336;
+}
+
+.log-summary {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: center;
+    font-size: 0.9rem;
+    opacity: 0.7;
 }
 
 /* Статус бар */
 .status-bar {
     display: flex;
-    justify-content: space-between;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
+    justify-content: space-around;
     padding: 0.75rem;
-    margin-top: auto;
-    backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .status-item {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.25rem;
 }
 
 .status-icon {
-    font-size: 1rem;
+    font-size: 1.5rem;
 }
 
 .status-text {
-    font-size: 0.9rem;
-    opacity: 0.9;
+    font-size: 0.75rem;
+    opacity: 0.8;
 }
 
 /* Уведомления */
 .notification {
     position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
     color: white;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    animation: slideIn 0.3s ease-out;
-    max-width: 300px;
+    gap: 0.75rem;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease-out;
+    max-width: 90%;
+    cursor: pointer;
 }
 
 .notification.info {
-    background: rgba(23, 162, 184, 0.9);
+    border-left: 4px solid #2196F3;
 }
 
 .notification.success {
-    background: rgba(40, 167, 69, 0.9);
+    border-left: 4px solid #4CAF50;
 }
 
 .notification.error {
-    background: rgba(220, 53, 69, 0.9);
+    border-left: 4px solid #f44336;
+}
+
+.notification-icon {
+    font-size: 1.2rem;
+}
+
+.notification-message {
+    flex: 1;
+    font-size: 0.95rem;
 }
 
 .notification-close {
-    background: none;
-    border: none;
-    color: white;
     font-size: 1.5rem;
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
+    opacity: 0.7;
 }
 
-@keyframes slideIn {
+@keyframes slideUp {
     from {
-        transform: translateX(100%);
+        transform: translate(-50%, 100%);
         opacity: 0;
     }
 
     to {
-        transform: translateX(0);
+        transform: translate(-50%, 0);
         opacity: 1;
     }
 }
 
+/* Прогресс */
+.processing-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+}
+
+.processing-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #2196F3;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.processing-text {
+    margin-top: 1rem;
+    color: white;
+    font-size: 1rem;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Ручной ввод */
+.manual-connect {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.manual-input {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.manual-input input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.manual-input input:focus {
+    border-color: #2196F3;
+}
+
+.manual-input input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
 /* Кнопки */
 .btn {
-    padding: 0.75rem 1.5rem;
+    padding: 0.75rem 1.25rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
-    font-weight: 500;
     transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
 .btn:disabled {
@@ -1157,53 +1225,54 @@ const formatTime = (date) => {
 }
 
 .btn-primary {
-    background: #007bff;
+    background: #2196F3;
     color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: #0056b3;
+    background: #1976D2;
 }
 
 .btn-secondary {
-    background: #6c757d;
+    background: rgba(255, 255, 255, 0.1);
     color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background: #5a6268;
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .btn-success {
-    background: #28a745;
+    background: #4CAF50;
     color: white;
 }
 
 .btn-success:hover:not(:disabled) {
-    background: #218838;
+    background: #388E3C;
 }
 
 .btn-danger {
-    background: #dc3545;
+    background: #f44336;
     color: white;
 }
 
 .btn-danger:hover:not(:disabled) {
-    background: #c82333;
+    background: #d32f2f;
 }
 
 .btn-info {
-    background: #17a2b8;
+    background: #00BCD4;
     color: white;
 }
 
 .btn-info:hover:not(:disabled) {
-    background: #138496;
+    background: #0097A7;
 }
 
 .btn-small {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
 }
 
 .btn-lg {
@@ -1211,23 +1280,21 @@ const formatTime = (date) => {
     font-size: 1.1rem;
 }
 
+/* Адаптивность */
 @media (max-width: 768px) {
-    .phone-scanner-view {
-        padding: 0.5rem;
+
+    .camera-preview,
+    .scanner-preview {
+        height: 250px;
     }
 
-    .camera-controls {
+    .camera-controls,
+    .scanner-controls {
         flex-direction: column;
-        align-items: stretch;
     }
 
-    .status-bar {
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .manual-input {
-        flex-direction: column;
+    .btn {
+        width: 100%;
     }
 
     .scan-item {
@@ -1238,12 +1305,6 @@ const formatTime = (date) => {
     .scan-time,
     .scan-index {
         min-width: auto;
-    }
-
-    .notification {
-        left: 20px;
-        right: 20px;
-        max-width: none;
     }
 }
 </style>
