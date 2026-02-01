@@ -3,9 +3,9 @@ services:
     image: postgres:15-alpine
     container_name: qr-postgres
     environment:
-      POSTGRES_DB: qr_system
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-qr_system}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
     ports:
       - "5432:5432"
@@ -29,9 +29,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://user:password@postgres:5432/qr_system
-      SECRET_KEY: your-secret-key-change-in-production
-      DEBUG: "True"
-      FRONTEND_URL: "http://localhost:3000"  # Добавить эту переменную
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      PRODUCTION: ${PRODUCTION:-false}
+      DEBUG: ${DEBUG:-true}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "8003:8003"
     volumes:
@@ -41,13 +42,16 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        IS_DOCKER: "true"  # Важно!
     container_name: qr-frontend
     depends_on:
       - backend
     environment:
-      VITE_API_URL: "/api"
-      VITE_WS_URL: "ws://localhost:8003"  # Добавить эту переменную
+      IS_DOCKER: "true"  # Для runtime, если нужно
     ports:
       - "3000:80"
     networks:
