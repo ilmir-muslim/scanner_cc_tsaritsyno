@@ -1,98 +1,82 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from datetime import datetime
-import json
-import uuid
 from typing import Dict
-from ..schemas import WebSocketMessage
+import asyncio
 
 router = APIRouter(prefix="/ws", tags=["remote-scanner"])
 
 
 class ConnectionManager:
     def __init__(self):
-        # session_id -> {"host": WebSocket, "client": WebSocket}
-        self.active_sessions: Dict[str, Dict] = {}
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.session_pairs: Dict[str, Dict[str, str]] = (
+            {}
+        )  # session_id -> {host: conn_id, client: conn_id}
 
     async def connect(self, websocket: WebSocket, session_id: str, device_type: str):
-        """Подключаем устройство, НЕ вызываем websocket.accept() здесь!"""
-        if session_id not in self.active_sessions:
-            self.active_sessions[session_id] = {}
+        """Подключаем устройство"""
+        await websocket.accept()
+        connection_id = f"{session_id}_{device_type}"
+        self.active_connections[connection_id] = websocket
 
-        self.active_sessions[session_id][device_type] = websocket
+        # Инициализируем сессию если нужно
+        if session_id not in self.session_pairs:
+            self.session_pairs[session_id] = {}
 
-        # Уведомляем другую сторону о подключении
-        other_type = "client" if device_type == "host" else "host"
-        if other_type in self.active_sessions[session_id]:
-            try:
-                await self.active_sessions[session_id][other_type].send_json(
-                    {
-                        "type": "status",
-                        "session_id": session_id,
-                        "status": f"{device_type}_connected",
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                )
-            except Exception as e:
-                print(f"Error sending status to {other_type}: {e}")
+        # Сохраняем подключение
+        self.session_pairs[session_id][device_type] = connection_id
 
-        print(f"✅ Device {device_type} connected to session {session_id}")
-        return session_id
+        print(f"✅ {device_type} подключен к сессии {session_id}")
+        return connection_id
 
-    async def disconnect(self, websocket: WebSocket, session_id: str, device_type: str):
+    async def disconnect(self, connection_id: str):
         """Отключаем устройство"""
+        if connection_id in self.active_connections:
+            try:
+                await self.active_connections[connection_id].close()
+            except:
+                pass
+            del self.active_connections[connection_id]
+
+        # Находим и удаляем из сессии
+        for session_id, devices in self.session_pairs.items():
+            for device_type, conn_id in list(devices.items()):
+                if conn_id == connection_id:
+                    if device_type in devices:
+                        del devices[device_type]
+                    print(f"❌ {device_type} отключен от сессии {session_id}")
+
+                    # Уведомляем другую сторону если она подключена
+                    other_type = "client" if device_type == "host" else "host"
+                    if other_type in self.session_pairs[session_id]:
+                        other_conn_id = self.session_pairs[session_id][other_type]
+                        if other_conn_id in self.active_connections:
+                            try:
+                                await self.active_connections[other_conn_id].send_json(
+                                    {
+                                        "type": "status",
+                                        "message": f"{device_type}_disconnected",
+                                        "timestamp": datetime.now().isoformat(),
+                                    }
+                                )
+                            except:
+                                pass
+
+    async def send_to_other(self, session_id: str, from_device: str, message: dict):
+        """Отправляем сообщение другой стороне"""
+        other_type = "client" if from_device == "host" else "host"
+
         if (
-            session_id in self.active_sessions
-            and device_type in self.active_sessions[session_id]
+            session_id in self.session_pairs
+            and other_type in self.session_pairs[session_id]
         ):
-            del self.active_sessions[session_id][device_type]
-
-            # Если обе стороны отключились, удаляем сессию
-            if not self.active_sessions[session_id]:
-                del self.active_sessions[session_id]
-                print(f"❌ Session {session_id} deleted (no devices)")
-            else:
-                # Уведомляем оставшуюся сторону об отключении
-                remaining_type = "client" if device_type == "host" else "host"
-                if remaining_type in self.active_sessions[session_id]:
-                    try:
-                        await self.active_sessions[session_id][
-                            remaining_type
-                        ].send_json(
-                            {
-                                "type": "status",
-                                "session_id": session_id,
-                                "status": f"{device_type}_disconnected",
-                                "timestamp": datetime.now().isoformat(),
-                            }
-                        )
-                        print(
-                            f"⚠️ Notified {remaining_type} about {device_type} disconnect"
-                        )
-                    except Exception as e:
-                        print(f"Error sending disconnect notification: {e}")
-
-    async def forward_scan(self, session_id: str, qr_content: str, from_device: str):
-        """Пересылает отсканированный код с телефона на компьютер"""
-        if session_id in self.active_sessions:
-            other_type = "host" if from_device == "client" else "client"
-            if other_type in self.active_sessions[session_id]:
+            other_conn_id = self.session_pairs[session_id][other_type]
+            if other_conn_id in self.active_connections:
                 try:
-                    message = {
-                        "type": "scan",
-                        "session_id": session_id,
-                        "qr_content": qr_content,
-                        "device_type": from_device,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    await self.active_sessions[session_id][other_type].send_json(
-                        message
-                    )
-                    print(
-                        f"📱 Scan forwarded from {from_device} to {other_type}: {qr_content[:50]}..."
-                    )
+                    await self.active_connections[other_conn_id].send_json(message)
                     return True
-                except Exception as e:
-                    print(f"Error forwarding scan: {e}")
+                except:
+                    return False
         return False
 
 
@@ -101,89 +85,94 @@ manager = ConnectionManager()
 
 @router.websocket("/remote-scanner/{session_id}/{device_type}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, device_type: str):
-    # Проверяем корректность device_type
     if device_type not in ["host", "client"]:
-        print(f"❌ Invalid device_type: {device_type}")
         await websocket.close(code=1008, reason="Invalid device type")
         return
 
     try:
-        # Принимаем соединение (только один раз!)
-        await websocket.accept()
-        print(f"✅ WebSocket connection accepted: {session_id} - {device_type}")
-
-        # Подключаем устройство к менеджеру
-        await manager.connect(websocket, session_id, device_type)
+        # Подключаемся
+        connection_id = await manager.connect(websocket, session_id, device_type)
 
         # Отправляем подтверждение подключения
         await websocket.send_json(
             {
-                "type": "connect",
+                "type": "connected",
                 "session_id": session_id,
                 "device_type": device_type,
-                "status": "connected",
                 "timestamp": datetime.now().isoformat(),
             }
         )
 
-        print(f"📡 WebSocket connected for {device_type} in session {session_id}")
+        # Уведомляем другую сторону если она уже подключена
+        other_type = "client" if device_type == "host" else "host"
+        if (
+            session_id in manager.session_pairs
+            and other_type in manager.session_pairs[session_id]
+        ):
+            other_conn_id = manager.session_pairs[session_id][other_type]
+            if other_conn_id in manager.active_connections:
+                # Уведомляем новую сторону о существующей
+                await websocket.send_json(
+                    {
+                        "type": "status",
+                        "message": f"{other_type}_already_connected",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
 
-        # Отправляем пинг каждые 30 секунд для поддержания соединения
-        import asyncio
+                # Уведомляем существующую о новой
+                await manager.active_connections[other_conn_id].send_json(
+                    {
+                        "type": "status",
+                        "message": f"{device_type}_connected",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
 
-        try:
-            while True:
-                try:
-                    # Ждем сообщение от клиента
-                    data = await asyncio.wait_for(
-                        websocket.receive_json(), timeout=60.0
+        # Обрабатываем сообщения
+        while True:
+            try:
+                data = await websocket.receive_json()
+
+                if data.get("type") == "scan" and data.get("qr_content"):
+                    # Пересылаем сканирование другой стороне
+                    await manager.send_to_other(
+                        session_id,
+                        device_type,
+                        {
+                            "type": "scan",
+                            "qr_content": data["qr_content"],
+                            "from_device": device_type,
+                            "timestamp": datetime.now().isoformat(),
+                        },
                     )
 
-                    if data.get("type") == "scan" and data.get("qr_content"):
-                        # Пересылаем сканирование
-                        await manager.forward_scan(
-                            session_id, data["qr_content"], device_type
-                        )
+                elif data.get("type") == "ping":
+                    # Отвечаем на пинг
+                    await websocket.send_json(
+                        {"type": "pong", "timestamp": datetime.now().isoformat()}
+                    )
 
-                    elif data.get("type") == "ping":
-                        # Отправляем pong для поддержания соединения
-                        await websocket.send_json(
-                            {"type": "pong", "timestamp": datetime.now().isoformat()}
-                        )
-
-                    elif data.get("type") == "disconnect":
-                        print(f"Disconnect requested by {device_type}")
-                        break
-
-                except asyncio.TimeoutError:
-                    # Таймаут - отправляем пинг для поддержания соединения
-                    try:
-                        await websocket.send_json(
-                            {"type": "ping", "timestamp": datetime.now().isoformat()}
-                        )
-                    except:
-                        break
-                except Exception as e:
-                    print(f"Error processing message: {e}")
+                elif data.get("type") == "disconnect":
                     break
 
-        except Exception as e:
-            print(f"WebSocket loop error: {e}")
+            except Exception as e:
+                print(f"Ошибка обработки сообщения: {e}")
+                break
 
     except WebSocketDisconnect:
-        print(f"📡 WebSocket disconnected normally: {session_id} - {device_type}")
+        print(f"Соединение разорвано: {session_id} - {device_type}")
     except Exception as e:
-        print(f"❌ WebSocket error: {e}")
+        print(f"Ошибка WebSocket: {e}")
     finally:
-        # Всегда отключаем устройство при выходе
-        await manager.disconnect(websocket, session_id, device_type)
+        await manager.disconnect(connection_id)
 
 
 @router.get("/sessions/{session_id}/status")
 async def get_session_status(session_id: str):
     """Проверка статуса сессии"""
-    if session_id in manager.active_sessions:
-        devices = list(manager.active_sessions[session_id].keys())
+    if session_id in manager.session_pairs:
+        devices = list(manager.session_pairs[session_id].keys())
         return {
             "active": True,
             "session_id": session_id,
@@ -206,15 +195,8 @@ async def get_session_status(session_id: str):
 async def get_all_sessions():
     """Получить все активные сессии"""
     sessions = []
-    for session_id, devices in manager.active_sessions.items():
-        sessions.append(
-            {
-                "session_id": session_id,
-                "devices": list(devices.keys()),
-                "host_connected": "host" in devices,
-                "client_connected": "client" in devices,
-            }
-        )
+    for session_id, devices in manager.session_pairs.items():
+        sessions.append({"session_id": session_id, "devices": list(devices.keys())})
 
     return {
         "total_sessions": len(sessions),

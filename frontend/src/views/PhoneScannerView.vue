@@ -41,13 +41,15 @@
                 </div>
 
                 <div class="manual-connect">
-                    <p>Или введите ID подключения вручную:</p>
+                    <p>Или введите ID подключения вручную (6 цифр):</p>
                     <div class="manual-input">
-                        <input v-model="manualSessionId" placeholder="ID подключения (например: rs_123...)" />
+                        <input v-model="manualSessionId" placeholder="Например: 123456" maxlength="6" pattern="[0-9]*"
+                            inputmode="numeric" />
                         <button @click="connectManually" class="btn btn-primary">
                             Подключиться
                         </button>
                     </div>
+                    <p class="hint">ID отображается на компьютере рядом с QR-кодом</p>
                 </div>
             </div>
         </div>
@@ -58,10 +60,10 @@
                     <h3>✅ Подключено к компьютеру</h3>
                     <p>Теперь сканируйте QR-коды товаров</p>
                     <div class="session-info">
-                        <strong>Сессия:</strong> {{ currentSessionId }}
+                        <strong>ID сессии:</strong> {{ currentSessionId }}
                     </div>
                     <div class="connection-stats">
-                        <span class="stat">📊 Сканов отправлено: {{scans.filter(s => s.sent).length}}</span>
+                        <span class="stat">📊 Сканов отправлено: {{ successfulScans }}</span>
                         <span class="stat">🕒 Подключено: {{ formatDuration(connectionTime) }}</span>
                     </div>
                 </div>
@@ -110,7 +112,7 @@
                 <div v-else class="scans-list">
                     <div v-for="(scan, index) in scans" :key="index" class="scan-item">
                         <span class="scan-time">{{ formatTime(scan.timestamp) }}</span>
-                        <span class="scan-content">{{ truncateText(scan.content, 25) }}</span>
+                        <span class="scan-content">{{ truncateText(scan.content, 20) }}</span>
                         <span :class="['scan-status', scan.sent ? 'status-sent' : 'status-error']">
                             {{ scan.sent ? '✓' : '✗' }}
                         </span>
@@ -126,18 +128,18 @@
             </div>
             <div class="status-item">
                 <span class="status-icon">📊</span>
-                <span class="status-text">Сканов: {{ scans.length }}</span>
+                <span class="status-text">Сканов: {{ successfulScans }}/{{ scans.length }}</span>
             </div>
             <div class="status-item">
                 <span class="status-icon">⏱️</span>
-                <span class="status-text">{{ connectionTime > 0 ? formatDuration(connectionTime) : '00:00' }}</span>
+                <span class="status-text">{{ formatDuration(connectionTime) }}</span>
             </div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 
 const videoElement = ref(null)
 const scannerVideoElement = ref(null)
@@ -149,13 +151,16 @@ const manualSessionId = ref('')
 const currentSessionId = ref('')
 const scans = ref([])
 const connectionTime = ref(0)
-const connectionStartTime = ref(null)
 
 let connectCameraStream = null
 let scannerCameraStream = null
 let wsConnection = null
 let scanInterval = null
 let connectionTimer = null
+
+const successfulScans = computed(() => {
+    return scans.value.filter(scan => scan.sent).length
+})
 
 onMounted(() => {
     startCamera()
@@ -178,18 +183,16 @@ const startCamera = async () => {
             connectCameraStream.getTracks().forEach(track => track.stop())
         }
 
-        // Запрашиваем разрешение на использование камеры
+        // Простые настройки камеры
         const constraints = {
             video: {
-                facingMode: { ideal: 'environment' }, // Используем заднюю камеру
-                width: { ideal: 1280 },
-                height: { ideal: 1280 }, // Делаем квадратное изображение
-                aspectRatio: 1 // Квадратное соотношение сторон
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 640 },
+                height: { ideal: 640 }
             },
             audio: false
         }
 
-        // Прямой запрос доступа к камере
         connectCameraStream = await navigator.mediaDevices.getUserMedia(constraints)
 
         if (videoElement.value) {
@@ -198,42 +201,12 @@ const startCamera = async () => {
 
             // Запускаем сканирование QR-кода подключения
             startQrScanning()
-            console.log('📷 Камера запущена для сканирования QR-кодов')
+            console.log('📷 Камера запущена')
         }
 
     } catch (error) {
         console.error('Camera error:', error)
-
-        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-            cameraError.value = 'Доступ к камере запрещен. Разрешите доступ к камере в настройках браузера.'
-        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-            cameraError.value = 'Камера не найдена'
-        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-            cameraError.value = 'Камера уже используется другим приложением'
-        } else if (error.name === 'OverconstrainedError') {
-            // Пробуем с менее строгими ограничениями
-            try {
-                const fallbackConstraints = {
-                    video: {
-                        facingMode: { ideal: 'environment' }
-                    },
-                    audio: false
-                }
-                connectCameraStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints)
-                if (videoElement.value) {
-                    videoElement.value.srcObject = connectCameraStream
-                    await videoElement.value.play()
-                    startQrScanning()
-                    console.log('📷 Камера запущена с упрощенными настройками')
-                }
-            } catch (fallbackError) {
-                cameraError.value = `Невозможно использовать камеру: ${fallbackError.message}`
-            }
-        } else if (error.name === 'SecurityError') {
-            cameraError.value = 'Доступ к камере заблокирован из соображений безопасности. Используйте HTTPS'
-        } else {
-            cameraError.value = `Ошибка камеры: ${error.message}`
-        }
+        cameraError.value = `Ошибка камеры: ${error.message}`
     }
 }
 
@@ -247,56 +220,35 @@ const stopCamera = () => {
     }
     if (scanInterval) clearInterval(scanInterval)
     isScanning.value = false
-    console.log('📷 Камера остановлена')
 }
 
-// Функция для сканирования QR-кодов
 const startQrScanning = () => {
-    console.log('🔍 Начало сканирования QR-кодов...')
+    console.log('🔍 Начало сканирования')
 
-    // Очищаем предыдущий интервал
-    if (scanInterval) {
-        clearInterval(scanInterval)
-    }
+    if (scanInterval) clearInterval(scanInterval)
 
-    // Сканируем каждые 500мс
+    // Просто проверяем ручной ввод каждую секунду
     scanInterval = setInterval(() => {
-        if (!videoElement.value || !connectCameraStream || isConnected.value) {
-            return
+        if (manualSessionId.value && /^\d{6}$/.test(manualSessionId.value)) {
+            console.log('📱 Ручной ввод обнаружен:', manualSessionId.value)
+            connectToSession(manualSessionId.value)
+            manualSessionId.value = ''
         }
-
-        try {
-            // Для демонстрации проверяем ручной ввод
-            if (manualSessionId.value && manualSessionId.value.startsWith('rs_')) {
-                console.log('📱 Ручной ввод сессии обнаружен:', manualSessionId.value)
-                connectToSession(manualSessionId.value.trim())
-                manualSessionId.value = ''
-            }
-        } catch (error) {
-            console.error('Ошибка при сканировании:', error)
-        }
-    }, 500)
+    }, 1000)
 }
 
 const connectManually = () => {
     const sessionId = manualSessionId.value.trim()
-    if (sessionId) {
-        if (sessionId.startsWith('rs_')) {
-            connectToSession(sessionId)
-        } else {
-            alert('ID сессии должен начинаться с "rs_"')
-        }
+    if (/^\d{6}$/.test(sessionId)) {
+        connectToSession(sessionId)
+    } else {
+        alert('Введите 6 цифр (например: 123456)')
     }
 }
 
 const connectToSession = async (sessionId) => {
     try {
-        console.log('🔄 Попытка подключения к сессии:', sessionId)
-
-        if (!sessionId.startsWith('rs_')) {
-            alert('Неверный формат ID сессии. Должен начинаться с rs_')
-            return
-        }
+        console.log('🔄 Подключение к сессии:', sessionId)
 
         currentSessionId.value = sessionId
         isScanning.value = true
@@ -307,9 +259,9 @@ const connectToSession = async (sessionId) => {
         const port = window.location.port ? `:${window.location.port}` : ''
         const wsUrl = `${protocol}//${host}${port}/ws/remote-scanner/${sessionId}/client`
 
-        console.log('📡 Подключение к WebSocket:', wsUrl)
+        console.log('📡 WebSocket URL:', wsUrl)
 
-        // Закрываем предыдущее соединение, если есть
+        // Закрываем предыдущее соединение
         if (wsConnection) {
             wsConnection.close()
         }
@@ -320,61 +272,44 @@ const connectToSession = async (sessionId) => {
             console.log('✅ WebSocket подключен')
             isConnected.value = true
             isScanning.value = false
-            connectionStartTime.value = new Date()
             startConnectionTimer()
             playSuccessBeep()
 
-            // Отправляем сообщение о подключении
-            wsConnection.send(JSON.stringify({
-                type: 'connect',
-                session_id: sessionId,
-                device_type: 'client',
-                status: 'connected'
-            }))
-
-            alert('✅ Успешно подключено к компьютеру! Теперь вы можете сканировать QR-коды товаров.')
+            alert('✅ Успешно подключено! Теперь можно сканировать QR-коды.')
         }
 
         wsConnection.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data)
-                console.log('📨 Получено сообщение:', message)
+                console.log('📨 Получено:', message)
 
-                if (message.type === 'ping') {
-                    // Отвечаем на пинг
-                    wsConnection.send(JSON.stringify({
-                        type: 'pong',
-                        timestamp: new Date().toISOString()
-                    }))
+                if (message.type === 'connected') {
+                    console.log('✅ Подтверждение подключения')
                 }
 
-                if (message.type === 'connect') {
-                    console.log('✅ Подтверждение подключения получено')
+                if (message.type === 'status') {
+                    console.log('📊 Статус:', message.message)
                 }
 
             } catch (error) {
-                console.error('❌ Ошибка парсинга сообщения:', error)
+                console.error('❌ Ошибка парсинга:', error)
             }
         }
 
         wsConnection.onerror = (error) => {
-            console.error('❌ Ошибка WebSocket:', error)
-            alert('Ошибка подключения к компьютеру. Проверьте сеть и убедитесь, что компьютер ожидает подключения.')
+            console.error('❌ WebSocket ошибка:', error)
+            alert('Ошибка подключения. Убедитесь, что компьютер ожидает подключения.')
             resetConnection()
         }
 
         wsConnection.onclose = (event) => {
-            console.log('📡 WebSocket закрыт:', event.code, event.reason)
+            console.log('📡 WebSocket закрыт')
             resetConnection()
-
-            if (event.code !== 1000) {
-                alert(`Соединение закрыто: ${event.reason || 'Неизвестная ошибка'}`)
-            }
         }
 
     } catch (error) {
         console.error('❌ Ошибка подключения:', error)
-        alert(`Ошибка подключения: ${error.message}`)
+        alert(`Ошибка: ${error.message}`)
         resetConnection()
     }
 }
@@ -382,14 +317,13 @@ const connectToSession = async (sessionId) => {
 const resetConnection = () => {
     isConnected.value = false
     currentSessionId.value = ''
-    connectionStartTime.value = null
     connectionTime.value = 0
     if (connectionTimer) {
         clearInterval(connectionTimer)
         connectionTimer = null
     }
 
-    // Перезапускаем камеру
+    // Перезапускаем камеру через секунду
     setTimeout(() => {
         if (!isConnected.value) {
             startCamera()
@@ -398,14 +332,11 @@ const resetConnection = () => {
 }
 
 const startConnectionTimer = () => {
-    if (connectionTimer) {
-        clearInterval(connectionTimer)
-    }
+    if (connectionTimer) clearInterval(connectionTimer)
 
+    connectionTime.value = 0
     connectionTimer = setInterval(() => {
-        if (connectionStartTime.value) {
-            connectionTime.value = Math.floor((new Date() - connectionStartTime.value) / 1000)
-        }
+        connectionTime.value++
     }, 1000)
 }
 
@@ -422,9 +353,8 @@ const startScannerCamera = async () => {
         const constraints = {
             video: {
                 facingMode: { ideal: 'environment' },
-                width: { ideal: 1280 },
-                height: { ideal: 1280 }, // Квадратное изображение
-                aspectRatio: 1
+                width: { ideal: 640 },
+                height: { ideal: 640 }
             }
         }
 
@@ -437,12 +367,12 @@ const startScannerCamera = async () => {
             console.log('📷 Камера сканирования запущена')
         }
 
-        // Запускаем сканирование товаров
+        // Запускаем тестовое сканирование каждые 3 секунды
         startProductScanning()
 
     } catch (error) {
-        console.error('❌ Ошибка камеры сканера:', error)
-        alert(`Ошибка камеры сканера: ${error.message}`)
+        console.error('❌ Ошибка камеры:', error)
+        alert(`Ошибка камеры: ${error.message}`)
     }
 }
 
@@ -455,18 +385,21 @@ const stopScannerCamera = () => {
         scannerVideoElement.value.srcObject = null
     }
     isScannerActive.value = false
-    console.log('📷 Камера сканирования остановлена')
 }
 
 const startProductScanning = () => {
-    // Эмуляция сканирования QR-кодов товаров
-    // В реальном приложении здесь будет код для распознавания QR-кодов
+    // Тестовое сканирование каждые 3 секунды
     const productScanInterval = setInterval(() => {
         if (!isScannerActive.value) {
             clearInterval(productScanInterval)
             return
         }
-    }, 2000)
+
+        // 30% шанс на тестовое сканирование
+        if (Math.random() < 0.3) {
+            emulateQrScan()
+        }
+    }, 3000)
 }
 
 const testScan = () => {
@@ -475,11 +408,11 @@ const testScan = () => {
 
 const emulateQrScan = () => {
     const mockCodes = [
-        'PRODUCT-12345-ABC',
-        'ITEM-67890-XYZ',
-        'SKU-98765-QWE',
-        'CODE-54321-RTY',
-        'ID-13579-UIO'
+        'PROD-12345',
+        'ITEM-67890',
+        'SKU-98765',
+        'CODE-54321',
+        'ID-13579'
     ]
 
     const randomCode = mockCodes[Math.floor(Math.random() * mockCodes.length)]
@@ -490,8 +423,7 @@ const emulateQrScan = () => {
         const message = {
             type: 'scan',
             qr_content: randomCode,
-            timestamp: timestamp.toISOString(),
-            device: 'phone'
+            timestamp: timestamp.toISOString()
         }
 
         try {
@@ -505,7 +437,7 @@ const emulateQrScan = () => {
 
             playScanBeep()
 
-            console.log(`📤 Отсканирован код: ${randomCode}`)
+            console.log(`📤 Отправлен код: ${randomCode}`)
 
         } catch (error) {
             console.error('❌ Ошибка отправки:', error)
@@ -575,7 +507,6 @@ const playBeep = (frequency, duration) => {
         oscillator.start(audioContext.currentTime)
         oscillator.stop(audioContext.currentTime + duration)
     } catch (e) {
-        // Audio not supported
         console.log('🔇 Аудио не поддерживается')
     }
 }
@@ -651,6 +582,7 @@ const formatDuration = (seconds) => {
     opacity: 0.9;
 }
 
+/* Квадратные контейнеры для камеры */
 .camera-preview,
 .scanner-preview {
     position: relative;
@@ -659,19 +591,19 @@ const formatDuration = (seconds) => {
     overflow: hidden;
     background: black;
     width: 100%;
-    height: 300px;
-    /* Фиксированная высота */
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    height: 0;
+    padding-bottom: 100%;
+    /* Это делает контейнер квадратным */
 }
 
 .camera-video,
 .scanner-video {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    /* Обрезаем для квадратного вида */
 }
 
 .scan-overlay {
@@ -687,11 +619,9 @@ const formatDuration = (seconds) => {
 }
 
 .scan-frame {
-    width: 250px;
-    /* Квадратная рамка */
-    height: 250px;
-    /* Квадратная рамка */
-    border: 2px solid rgba(40, 167, 69, 0.8);
+    width: 70%;
+    height: 70%;
+    border: 3px solid rgba(40, 167, 69, 0.8);
     border-radius: 12px;
     position: relative;
     box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.7);
@@ -700,38 +630,38 @@ const formatDuration = (seconds) => {
 /* Уголки рамки */
 .corner {
     position: absolute;
-    width: 20px;
-    height: 20px;
-    border: 2px solid #28a745;
+    width: 24px;
+    height: 24px;
+    border: 3px solid #28a745;
 }
 
 .corner-tl {
-    top: -2px;
-    left: -2px;
+    top: -3px;
+    left: -3px;
     border-right: none;
     border-bottom: none;
     border-top-left-radius: 8px;
 }
 
 .corner-tr {
-    top: -2px;
-    right: -2px;
+    top: -3px;
+    right: -3px;
     border-left: none;
     border-bottom: none;
     border-top-right-radius: 8px;
 }
 
 .corner-bl {
-    bottom: -2px;
-    left: -2px;
+    bottom: -3px;
+    left: -3px;
     border-right: none;
     border-top: none;
     border-bottom-left-radius: 8px;
 }
 
 .corner-br {
-    bottom: -2px;
-    right: -2px;
+    bottom: -3px;
+    right: -3px;
     border-left: none;
     border-top: none;
     border-bottom-right-radius: 8px;
@@ -740,26 +670,26 @@ const formatDuration = (seconds) => {
 /* Анимированная линия сканирования */
 .scan-line {
     position: absolute;
-    top: 50%;
+    top: 15%;
     left: 50%;
-    transform: translate(-50%, -50%);
-    width: 220px;
-    height: 2px;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 3px;
     background: linear-gradient(90deg, transparent, #28a745, transparent);
     animation: scan 2s linear infinite;
 }
 
 @keyframes scan {
     0% {
-        top: 25%;
+        top: 15%;
     }
 
     50% {
-        top: 75%;
+        top: 85%;
     }
 
     100% {
-        top: 25%;
+        top: 15%;
     }
 }
 
@@ -801,7 +731,7 @@ const formatDuration = (seconds) => {
 .manual-input {
     display: flex;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin-top: 0.5rem;
 }
 
 .manual-input input {
@@ -811,13 +741,18 @@ const formatDuration = (seconds) => {
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.1);
     color: white;
-    font-size: 1rem;
+    font-size: 1.2rem;
+    text-align: center;
+    letter-spacing: 2px;
 }
 
-.manual-input input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+.hint {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin-top: 0.5rem;
 }
 
+/* Остальные стили остаются без изменений */
 .connection-info {
     margin-bottom: 1.5rem;
 }
@@ -1049,11 +984,6 @@ const formatDuration = (seconds) => {
 
     .manual-input {
         flex-direction: column;
-    }
-
-    .scan-frame {
-        width: 200px;
-        height: 200px;
     }
 }
 </style>
