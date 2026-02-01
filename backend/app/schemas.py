@@ -18,7 +18,7 @@ class ScanResponse(ScanBase):
     scanned_at: datetime
     printed_at: Optional[datetime]
     print_status: str
-    qr_image: Optional[str] = None  # Добавляем поле для base64 изображения
+    qr_image: Optional[str] = None 
 
     class Config:
         from_attributes = True
@@ -48,7 +48,7 @@ class PrinterResponse(PrinterBase):
 class PrintRequest(BaseModel):
     qr_content: str
     printer_id: Optional[int] = None
-    label_size: Optional[str] = "50x30"  # mm
+    label_size: Optional[str] = "50x30"  
     copies: int = 1
 
 
@@ -61,4 +61,6 @@ class ExportRequest(BaseModel):
 class ImageScanRequest(BaseModel):
     """Для сканирования из изображения"""
 
-    image_data: Optional[str] = None  # base64 encoded image
+    image_data: Optional[str] = None 
+
+

@@ -4,7 +4,7 @@
         <div class="mode-switcher">
             <button @click="mode = 'scanner'" :class="['mode-btn', mode === 'scanner' ? 'mode-btn-active' : '']">
                 <span class="mode-icon">📟</span>
-                <span>Сканер S20-B</span>
+                <span>Сканер</span>
             </button>
             <button @click="mode = 'camera'" :class="['mode-btn', mode === 'camera' ? 'mode-btn-active' : '']">
                 <span class="mode-icon">📷</span>
@@ -18,22 +18,9 @@
                 <h2>Сканирование сканером</h2>
             </div>
 
-            <div class="scanner-instructions">
-                <p><strong>Инструкция:</strong></p>
-                <ol>
-                    <li>Подключите сканер S20-B по USB или Bluetooth</li>
-                    <li>Наведите сканер на QR-код</li>
-                    <li>Сканер автоматически отправит код в поле ниже</li>
-                </ol>
-            </div>
-
             <div class="scanner-input-section">
-                <label for="scannerInput">Поле для сканирования:</label>
                 <input id="scannerInput" v-model="scannerInput" placeholder="Наведите сканер на QR-код..."
                     @keydown.enter="processScannerInput" ref="scannerInputRef" class="scanner-input" autofocus />
-                <small class="input-hint">
-                    Сканер автоматически добавит код и нажмёт Enter. Или введите вручную и нажмите Enter.
-                </small>
             </div>
         </div>
 
@@ -48,177 +35,90 @@
                     :class="['camera-toggle-btn', isCameraActive ? 'btn-danger' : 'btn-success']">
                     {{ isCameraActive ? 'Выключить камеру' : 'Включить камеру' }}
                 </button>
-
-                <select v-model="selectedCamera" :disabled="isCameraActive" class="camera-select">
-                    <option value="">Выберите камеру</option>
-                    <option v-for="camera in availableCameras" :key="camera.deviceId" :value="camera.deviceId">
-                        {{ camera.label }}
-                    </option>
-                </select>
             </div>
 
             <div v-if="isCameraActive" class="camera-preview">
                 <video ref="videoElement" autoplay playsinline class="camera-video"></video>
                 <div class="scan-overlay">
                     <div class="scan-frame"></div>
-                    <p class="scan-hint">Наведите камеру на QR-код</p>
                 </div>
 
                 <div class="camera-actions">
-                    <button @click="capturePhoto" class="btn btn-info" :disabled="isDecoding">
-                        📸 {{ isDecoding ? 'Декодирование...' : 'Сделать снимок' }}
+                    <button @click="capturePhoto" class="btn btn-primary">
+                        📸 Сканировать QR-код
                     </button>
-                    <button @click="uploadImage" class="btn btn-secondary" :disabled="isDecoding">
-                        📤 {{ isDecoding ? 'Декодирование...' : 'Загрузить изображение' }}
-                    </button>
-                    <input ref="fileInput" type="file" accept="image/*" @change="handleFileUpload"
-                        style="display: none;" />
-                </div>
-            </div>
-
-            <div v-else class="camera-placeholder">
-                <div class="placeholder-icon">📷</div>
-                <p>Нажмите "Включить камеру" для начала сканирования</p>
-            </div>
-
-            <!-- QR Decoder Status -->
-            <div v-if="decoderStatus" class="decoder-status" :class="`status-${decoderStatus.type}`">
-                {{ decoderStatus.message }}
-            </div>
-        </div>
-
-        <!-- Last scanned code -->
-        <div v-if="lastScan" class="last-scan">
-            <div class="section-header">
-                <h2>Последний отсканированный код</h2>
-            </div>
-
-            <div class="scan-details">
-                <div class="qr-preview">
-                    <img v-if="lastScan.qr_image" :src="lastScan.qr_image" alt="QR Code" class="qr-image" />
-                    <div v-else class="qr-placeholder">
-                        <span class="qr-placeholder-icon">QR</span>
-                    </div>
-                </div>
-
-                <div class="scan-info">
-                    <div class="info-row">
-                        <span class="info-label">Содержимое:</span>
-                        <code class="info-value">{{ lastScan.qr_content }}</code>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Источник:</span>
-                        <span :class="['tag', lastScan.scan_source === 'scanner' ? 'tag-info' : 'tag-warning']">
-                            {{ lastScan.scan_source === 'scanner' ? 'Сканер' : 'Камера' }}
-                        </span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Время:</span>
-                        <span class="info-value">{{ formatDateTime(lastScan.scanned_at) }}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Статус печати:</span>
-                        <span :class="['tag', getStatusClass(lastScan.print_status)]">
-                            {{ lastScan.print_status }}
-                        </span>
-                    </div>
-
-                    <div class="action-buttons">
-                        <button @click="reprint(lastScan.qr_content)" class="btn btn-primary">
-                            🖨️ Печатать снова
-                        </button>
-                        <button @click="copyToClipboard(lastScan.qr_content)" class="btn btn-secondary">
-                            📋 Копировать код
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Printer status -->
-        <div class="printer-status">
-            <div class="section-header">
-                <h2>Статус системы печати</h2>
+        <!-- Actions -->
+        <div class="actions-section">
+            <button @click="testPrint" class="btn btn-secondary">
+                🖨️ Тестовая печать
+            </button>
+            <button @click="openPrintWindow" class="btn btn-info">
+                🔧 Открыть настройки печати
+            </button>
+        </div>
+
+        <!-- Last scan info -->
+        <div v-if="lastScan" class="last-scan-info">
+            <div class="info-row">
+                <span class="info-label">Последний код:</span>
+                <span class="info-value">{{ truncateText(lastScan.qr_content, 40) }}</span>
             </div>
-
-            <div class="printer-info">
-                <div class="info-row">
-                    <span class="info-label">Принтер:</span>
-                    <span class="info-value">{{ printerName }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Статус:</span>
-                    <span :class="['tag', printerReady ? 'tag-success' : 'tag-danger']">
-                        {{ printerStatus }}
-                    </span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Тип подключения:</span>
-                    <span class="info-value">{{ printerConnectionType }}</span>
-                </div>
+            <div class="info-row">
+                <span class="info-label">Время:</span>
+                <span class="info-value">{{ formatTime(lastScan.scanned_at) }}</span>
             </div>
-
-            <hr class="divider">
-
-            <div class="printer-actions">
-                <button @click="testPrint" :disabled="!printerReady" class="btn btn-outline">
-                    🖨️ Тест печати
-                </button>
-                <button @click="$router.push('/printers')" class="btn btn-text">
-                    ⚙️ Настройки принтеров
-                </button>
+            <div class="info-row">
+                <span class="info-label">Статус:</span>
+                <span :class="['tag', getStatusClass(lastScan.print_status)]">
+                    {{ getStatusText(lastScan.print_status) }}
+                </span>
             </div>
         </div>
 
-        <!-- Toast notification -->
-        <div v-if="toastVisible" :class="['toast', `toast-${toastType}`]">
-            {{ toastMessage }}
+        <!-- Status bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-icon">🖨️</span>
+                <span class="status-text">Браузерная печать</span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon">📊</span>
+                <span class="status-text">Сканов: {{ totalScans }}</span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon">⏱️</span>
+                <span class="status-text">{{ currentTime }}</span>
+            </div>
         </div>
     </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import axios from 'axios'
-import jsQR from 'jsqr'
-
-const router = useRouter()
 
 // Reactive variables
 const mode = ref('scanner')
 const scannerInput = ref('')
 const scannerInputRef = ref(null)
 const lastScan = ref(null)
+const totalScans = ref(0)
+const currentTime = ref('')
 
 // Camera variables
 const isCameraActive = ref(false)
-const selectedCamera = ref('')
-const availableCameras = ref([])
 const videoElement = ref(null)
-const fileInput = ref(null)
-const isDecoding = ref(false)
-const decoderStatus = ref(null)
-
-// Printer variables
-const printerStatus = ref('Проверка...')
-const printerName = ref('Не выбран')
-const printerConnectionType = ref('-')
-const printerReady = ref(false)
-
-// Toast variables
-const toastVisible = ref(false)
-const toastMessage = ref('')
-const toastType = ref('info')
-
-// Store camera stream reference
 let cameraStream = null
 
 onMounted(() => {
     focusScannerInput()
-    loadPrinterStatus()
+    updateTime()
+    setInterval(updateTime, 60000)
     document.addEventListener('keydown', handleGlobalKeyDown)
-    enumerateCameras()
 })
 
 onUnmounted(() => {
@@ -226,17 +126,13 @@ onUnmounted(() => {
     stopCamera()
 })
 
-// Toast methods
-const showToast = (message, type = 'info') => {
-    toastMessage.value = message
-    toastType.value = type
-    toastVisible.value = true
-    setTimeout(() => {
-        toastVisible.value = false
-    }, 3000)
+const updateTime = () => {
+    currentTime.value = new Date().toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+    })
 }
 
-// Scanner methods
 const focusScannerInput = () => {
     nextTick(() => {
         if (scannerInputRef.value) {
@@ -261,26 +157,6 @@ const processScannerInput = async () => {
     focusScannerInput()
 }
 
-// Camera methods
-const enumerateCameras = async () => {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const videoDevices = devices.filter(device => device.kind === 'videoinput')
-
-        availableCameras.value = videoDevices.map(device => ({
-            deviceId: device.deviceId,
-            label: device.label || `Камера ${availableCameras.value.length + 1}`
-        }))
-
-        if (availableCameras.value.length > 0 && !selectedCamera.value) {
-            selectedCamera.value = availableCameras.value[0].deviceId
-        }
-    } catch (error) {
-        console.error('Error enumerating cameras:', error)
-        showToast('Не удалось получить список камер', 'warning')
-    }
-}
-
 const toggleCamera = async () => {
     if (isCameraActive.value) {
         stopCamera()
@@ -293,7 +169,6 @@ const startCamera = async () => {
     try {
         const constraints = {
             video: {
-                deviceId: selectedCamera.value ? { exact: selectedCamera.value } : undefined,
                 facingMode: { ideal: 'environment' },
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
@@ -308,7 +183,6 @@ const startCamera = async () => {
         }
     } catch (error) {
         console.error('Error starting camera:', error)
-        showToast('Не удалось включить камеру. Проверьте разрешения.', 'error')
     }
 }
 
@@ -323,65 +197,6 @@ const stopCamera = () => {
     isCameraActive.value = false
 }
 
-const decodeQRFromImage = async (imageData) => {
-    try {
-        isDecoding.value = true
-        decoderStatus.value = { type: 'info', message: 'Декодирование QR-кода...' }
-
-        // Создаем изображение
-        const image = new Image()
-        image.src = imageData
-
-        await new Promise((resolve, reject) => {
-            image.onload = resolve
-            image.onerror = reject
-        })
-
-        // Создаем canvas для обработки
-        const canvas = document.createElement('canvas')
-        canvas.width = image.width
-        canvas.height = image.height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-
-        // Получаем данные изображения
-        const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height)
-
-        // Используем jsQR для декодирования QR-кода
-        try {
-            const code = jsQR(
-                imageDataObj.data,
-                canvas.width,
-                canvas.height,
-                {
-                    inversionAttempts: "dontInvert",
-                }
-            )
-
-            if (code) {
-                decoderStatus.value = { type: 'success', message: 'QR-код найден!' }
-                return code.data
-            }
-
-            decoderStatus.value = { type: 'warning', message: 'QR-код не найден в изображении' }
-            return null
-        } catch (jsQRError) {
-            console.warn('jsQR decoding error:', jsQRError)
-            decoderStatus.value = { type: 'error', message: 'Ошибка декодирования QR-кода' }
-            return null
-        }
-    } catch (error) {
-        console.error('QR decoding error:', error)
-        decoderStatus.value = { type: 'error', message: 'Ошибка обработки изображения' }
-        return null
-    } finally {
-        setTimeout(() => {
-            isDecoding.value = false
-            decoderStatus.value = null
-        }, 2000)
-    }
-}
-
 const capturePhoto = async () => {
     if (!videoElement.value || !isCameraActive.value) return
 
@@ -393,67 +208,28 @@ const capturePhoto = async () => {
         const ctx = canvas.getContext('2d')
         ctx.drawImage(videoElement.value, 0, 0, canvas.width, canvas.height)
 
-        // Преобразуем в Data URL
-        const imageData = canvas.toDataURL('image/jpeg', 0.8)
+        canvas.toBlob(async (blob) => {
+            const formData = new FormData()
+            formData.append('image', blob, 'photo.jpg')
 
-        // Декодируем QR-код на фронтенде
-        const qrContent = await decodeQRFromImage(imageData)
+            const response = await axios.post('/api/scans/scan-image/', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
 
-        if (qrContent) {
-            // Если QR-код найден, отправляем на бэкенд
-            await processScan(qrContent, 'camera')
-            playBeep()
-            stopCamera()
-        } else {
-            showToast('QR-код не обнаружен на изображении. Проверьте качество изображения.', 'warning')
-        }
+            if (response.data && response.data.qr_content) {
+                await processScan(response.data.qr_content, 'camera')
+                playBeep()
+                stopCamera()
+            }
+        }, 'image/jpeg', 0.8)
+
     } catch (error) {
         console.error('Error capturing photo:', error)
-        showToast('Не удалось сделать снимок', 'error')
     }
 }
 
-const uploadImage = () => {
-    if (fileInput.value && !isDecoding.value) {
-        fileInput.value.click()
-    }
-}
-
-const handleFileUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
-    try {
-        const reader = new FileReader()
-
-        await new Promise((resolve, reject) => {
-            reader.onload = resolve
-            reader.onerror = reject
-            reader.readAsDataURL(file)
-        })
-
-        const imageData = reader.result
-
-        // Декодируем QR-код на фронтенде
-        const qrContent = await decodeQRFromImage(imageData)
-
-        if (qrContent) {
-            // Если QR-код найден, отправляем на бэкенд
-            await processScan(qrContent, 'camera')
-            playBeep()
-        } else {
-            showToast('QR-код не обнаружен в изображении. Попробуйте другое изображение.', 'warning')
-        }
-    } catch (error) {
-        console.error('Error processing uploaded image:', error)
-        showToast('Ошибка обработки изображения', 'error')
-    } finally {
-        // Clear input
-        event.target.value = ''
-    }
-}
-
-// Common methods
 const processScan = async (qrContent, source) => {
     try {
         playBeep()
@@ -464,16 +240,178 @@ const processScan = async (qrContent, source) => {
         })
 
         lastScan.value = response.data
-        showToast('QR-код успешно отсканирован и отправлен на печать!', 'success')
+        totalScans.value++
+
+        // Автоматически печатаем
+        await printQrCode(qrContent)
 
     } catch (error) {
         console.error('Scan error:', error)
-        if (error.response && error.response.status === 400) {
-            showToast('Некорректный QR-код', 'error')
-        } else {
-            showToast('Ошибка при обработке QR-кода', 'error')
-        }
     }
+}
+
+const testPrint = () => {
+    printTestPage()
+}
+
+const openPrintWindow = () => {
+    const printWindow = window.open('/printers', '_blank')
+    if (printWindow) {
+        printWindow.focus()
+    }
+}
+
+const printQrCode = async (qrContent) => {
+    try {
+        const printWindow = window.open('', '_blank')
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Печать QR-кода</title>
+                <style>
+                    @media print {
+                        body { margin: 0; padding: 0; }
+                    }
+                    body {
+                        font-family: Arial, sans-serif;
+                        text-align: center;
+                        padding: 10mm;
+                    }
+                    .qr-container {
+                        margin: 0 auto;
+                        max-width: 80mm;
+                    }
+                    .qr-image {
+                        width: 50mm;
+                        height: 50mm;
+                        margin: 5mm auto;
+                        display: block;
+                    }
+                    .qr-content {
+                        margin-top: 3mm;
+                        padding: 2mm;
+                        background: #f5f5f5;
+                        border-radius: 2mm;
+                        word-break: break-all;
+                        font-family: monospace;
+                        font-size: 9pt;
+                    }
+                    .print-info {
+                        margin-top: 2mm;
+                        color: #666;
+                        font-size: 8pt;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="qr-container">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrContent)}" 
+                         alt="QR Code" class="qr-image" />
+                    <div class="qr-content">
+                        ${qrContent}
+                    </div>
+                    <div class="print-info">
+                        ${new Date().toLocaleString('ru-RU')}
+                    </div>
+                </div>
+                <script>
+                    window.onload = function() {
+                        window.print();
+                    };
+                <\/script>
+            </body>
+            </html>
+        `
+
+        printWindow.document.write(htmlContent)
+        printWindow.document.close()
+
+    } catch (error) {
+        console.error('Print error:', error)
+    }
+}
+
+const printTestPage = () => {
+    const printWindow = window.open('', '_blank')
+
+    const testHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Тестовая печать</title>
+            <style>
+                @media print {
+                    body { margin: 0; padding: 0; }
+                }
+                body {
+                    font-family: Arial, sans-serif;
+                    text-align: center;
+                    padding: 20mm;
+                }
+                .test-content {
+                    border: 1px solid #ccc;
+                    padding: 10mm;
+                    margin: 0 auto;
+                    max-width: 80mm;
+                }
+                h1 { 
+                    color: #333; 
+                    font-size: 16pt;
+                    margin: 0 0 5mm 0;
+                }
+                .test-info {
+                    margin: 5mm 0;
+                    padding: 3mm;
+                    background: #f9f9f9;
+                    border-radius: 2mm;
+                    font-size: 10pt;
+                }
+                .instructions {
+                    text-align: left;
+                    margin: 5mm 0;
+                    padding: 3mm;
+                    border: 1px dashed #ccc;
+                    border-radius: 2mm;
+                    font-size: 9pt;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="test-content">
+                <h1>ТЕСТОВАЯ ПЕЧАТЬ</h1>
+                <div class="test-info">
+                    <p><strong>Система:</strong> QR Replication System</p>
+                    <p><strong>Дата:</strong> ${new Date().toLocaleDateString('ru-RU')}</p>
+                    <p><strong>Время:</strong> ${new Date().toLocaleTimeString('ru-RU')}</p>
+                </div>
+                
+                <div class="instructions">
+                    <p><strong>Инструкция по тестированию:</strong></p>
+                    <ol>
+                        <li>Убедитесь, что выбран правильный принтер</li>
+                        <li>Проверьте настройки бумаги (размер, ориентация)</li>
+                        <li>Нажмите "Печать" в диалоговом окне</li>
+                        <li>Проверьте качество отпечатка</li>
+                    </ol>
+                </div>
+                
+                <div style="margin-top: 10mm; font-size: 8pt; color: #666;">
+                    Если этот текст печатается четко, система работает корректно.
+                </div>
+            </div>
+            <script>
+                window.onload = function() {
+                    window.print();
+                };
+            <\/script>
+        </body>
+        </html>
+    `
+
+    printWindow.document.write(testHTML)
+    printWindow.document.close()
 }
 
 const playBeep = () => {
@@ -485,7 +423,7 @@ const playBeep = () => {
         oscillator.connect(gainNode)
         gainNode.connect(audioContext.destination)
 
-        oscillator.frequency.value = 1000
+        oscillator.frequency.value = 800
         oscillator.type = 'sine'
 
         gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
@@ -498,56 +436,17 @@ const playBeep = () => {
     }
 }
 
-const loadPrinterStatus = async () => {
-    try {
-        const response = await axios.get('/api/printers/default')
-
-        // Проверяем, что принтер реальный
-        if (response.data && response.data.id && response.data.id !== 0) {
-            printerName.value = response.data.name
-            printerConnectionType.value = response.data.connection_type
-            printerStatus.value = 'Готов'
-            printerReady.value = true
-        } else {
-            // Если принтера нет, показываем сообщение
-            printerName.value = 'Не настроен'
-            printerConnectionType.value = '-'
-            printerStatus.value = 'Настройте принтер'
-            printerReady.value = false
-        }
-    } catch (error) {
-        printerStatus.value = 'Недоступен'
-        printerReady.value = false
-        printerName.value = 'Ошибка загрузки'
-    }
+const truncateText = (text, maxLength) => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + '...'
 }
 
-const testPrint = async () => {
-    try {
-        await axios.post('/api/printers/test/')
-        showToast('Тестовое задание отправлено на принтер', 'success')
-    } catch (error) {
-        showToast('Ошибка тестовой печати', 'error')
-    }
-}
-
-const reprint = async (qrContent) => {
-    try {
-        await axios.post('/api/printers/test/')
-        showToast('Задание на печать отправлено', 'success')
-    } catch (error) {
-        showToast('Ошибка при печати', 'error')
-    }
-}
-
-const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-        .then(() => showToast('Скопировано в буфер обмена', 'success'))
-        .catch(() => showToast('Ошибка копирования', 'error'))
-}
-
-const formatDateTime = (dateString) => {
-    return new Date(dateString).toLocaleString('ru-RU')
+const formatTime = (dateString) => {
+    if (!dateString) return ''
+    return new Date(dateString).toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+    })
 }
 
 const getStatusClass = (status) => {
@@ -558,141 +457,124 @@ const getStatusClass = (status) => {
     }
     return map[status] || 'tag-info'
 }
+
+const getStatusText = (status) => {
+    const map = {
+        'success': 'Напечатан',
+        'pending': 'В ожидании',
+        'failed': 'Ошибка'
+    }
+    return map[status] || status
+}
 </script>
 
 <style scoped>
 .scanner-view {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
+    height: 100vh;
+    padding: 1rem;
+    background: #f8f9fa;
 }
 
 .mode-switcher {
     display: flex;
-    gap: 1rem;
+    gap: 0.5rem;
     margin-bottom: 1rem;
 }
 
 .mode-btn {
     flex: 1;
-    padding: 1rem;
+    padding: 0.75rem;
     border: 2px solid #ddd;
-    border-radius: 8px;
+    border-radius: 6px;
     background: white;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.25rem;
     transition: all 0.2s;
+    font-weight: 500;
 }
 
 .mode-btn:hover {
-    border-color: #667eea;
+    border-color: #007bff;
 }
 
 .mode-btn-active {
-    border-color: #667eea;
+    border-color: #007bff;
     background: #f0f4ff;
 }
 
 .mode-icon {
-    font-size: 2rem;
+    font-size: 1.5rem;
 }
 
 .scanner-section,
-.camera-section,
-.last-scan,
-.printer-status {
+.camera-section {
     background: white;
     border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .section-header {
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 1rem;
 }
 
 .section-header h2 {
     color: #333;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 600;
-}
-
-.scanner-instructions {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-radius: 6px;
-    margin-bottom: 1.5rem;
-}
-
-.scanner-instructions ol {
-    padding-left: 1.5rem;
-    margin-top: 0.5rem;
-}
-
-.scanner-instructions li {
-    margin-bottom: 0.25rem;
-}
-
-.scanner-input-section {
-    margin: 1.5rem 0;
-}
-
-.scanner-input-section label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: #333;
 }
 
 .scanner-input {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    border: 2px solid #007bff;
+    border-radius: 6px;
     font-size: 1rem;
+    text-align: center;
     transition: border-color 0.2s;
 }
 
 .scanner-input:focus {
     outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-}
-
-.input-hint {
-    display: block;
-    color: #666;
-    font-style: italic;
-    margin-top: 0.5rem;
+    border-color: #0056b3;
 }
 
 .camera-controls {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 1rem;
 }
 
 .camera-toggle-btn {
     padding: 0.5rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-weight: 500;
 }
 
-.camera-select {
-    flex: 1;
-    min-width: 200px;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: white;
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
 }
 
 .camera-preview {
@@ -702,9 +584,6 @@ const getStatusClass = (status) => {
 
 .camera-video {
     width: 100%;
-    max-width: 640px;
-    display: block;
-    margin: 0 auto;
     border-radius: 8px;
     border: 2px solid #ddd;
 }
@@ -716,212 +595,40 @@ const getStatusClass = (status) => {
     width: 100%;
     height: 100%;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: rgba(0, 0, 0, 0.3);
-    pointer-events: none;
 }
 
 .scan-frame {
     width: 70%;
     height: 70%;
-    border: 3px solid #fff;
+    border: 3px solid #28a745;
     border-radius: 8px;
     box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
-}
-
-.scan-hint {
-    color: white;
-    margin-top: 1rem;
-    font-weight: 500;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .camera-actions {
     display: flex;
     justify-content: center;
+    margin-top: 1rem;
+}
+
+.actions-section {
+    display: flex;
     gap: 1rem;
-    margin-top: 1rem;
-    flex-wrap: wrap;
-}
-
-.camera-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-    color: #666;
-}
-
-.placeholder-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-}
-
-.decoder-status {
-    padding: 0.75rem;
-    margin-top: 1rem;
-    border-radius: 4px;
-    text-align: center;
-    font-weight: 500;
-}
-
-.status-info {
-    background: #d1ecf1;
-    color: #0c5460;
-    border: 1px solid #bee5eb;
-}
-
-.status-success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-}
-
-.status-warning {
-    background: #fff3cd;
-    color: #856404;
-    border: 1px solid #ffeaa7;
-}
-
-.status-error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-}
-
-.scan-details {
-    display: flex;
-    gap: 2rem;
-    align-items: flex-start;
-}
-
-@media (max-width: 768px) {
-    .scan-details {
-        flex-direction: column;
-        align-items: center;
-    }
-}
-
-.qr-preview {
-    flex-shrink: 0;
-}
-
-.qr-image {
-    width: 200px;
-    height: 200px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 8px;
     background: white;
-}
-
-.qr-placeholder {
-    width: 200px;
-    height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px dashed #ddd;
-    border-radius: 4px;
-    background: #f8f9fa;
-}
-
-.qr-placeholder-icon {
-    font-size: 2rem;
-    color: #999;
-    font-weight: bold;
-}
-
-.scan-info {
-    flex-grow: 1;
-}
-
-.info-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 1rem;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.info-label {
-    font-weight: 600;
-    min-width: 140px;
-    color: #555;
-}
-
-.info-value {
-    word-break: break-all;
-    font-family: 'Courier New', monospace;
-    background: #f5f5f5;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-}
-
-.tag {
-    display: inline-block;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    border-radius: 4px;
-    white-space: nowrap;
-}
-
-.tag-success {
-    background: #28a745;
-    color: white;
-}
-
-.tag-warning {
-    background: #ffc107;
-    color: black;
-}
-
-.tag-danger {
-    background: #dc3545;
-    color: white;
-}
-
-.tag-info {
-    background: #17a2b8;
-    color: white;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    flex-wrap: wrap;
-}
-
-.printer-info {
-    margin-bottom: 1rem;
-}
-
-.divider {
-    border: none;
-    border-top: 1px solid #dee2e6;
-    margin: 1rem 0;
-}
-
-.printer-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .btn {
     padding: 0.5rem 1rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-weight: 500;
-    transition: all 0.2s;
+    flex: 1;
 }
 
 .btn-primary {
@@ -939,25 +646,7 @@ const getStatusClass = (status) => {
 }
 
 .btn-secondary:hover {
-    background: #545b62;
-}
-
-.btn-success {
-    background: #28a745;
-    color: white;
-}
-
-.btn-success:hover {
-    background: #1e7e34;
-}
-
-.btn-danger {
-    background: #dc3545;
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #bd2130;
+    background: #5a6268;
 }
 
 .btn-info {
@@ -969,88 +658,92 @@ const getStatusClass = (status) => {
     background: #138496;
 }
 
-.btn-outline {
-    background: transparent;
-    border: 1px solid #007bff;
-    color: #007bff;
+.last-scan-info {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.btn-outline:hover {
-    background: #007bff;
-    color: white;
-}
-
-.btn-text {
-    background: transparent;
-    color: #007bff;
-    border: none;
-}
-
-.btn-text:hover {
-    background: #f0f4ff;
-}
-
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn:disabled:hover {
-    background: inherit;
-    color: inherit;
-}
-
-.toast {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 1rem 1.5rem;
-    border-radius: 4px;
-    color: white;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
-    animation: slideIn 0.3s ease-out;
-}
-
-.toast-success {
-    background: #28a745;
-}
-
-.toast-error {
-    background: #dc3545;
-}
-
-.toast-warning {
-    background: #ffc107;
-    color: black;
-}
-
-.toast-info {
-    background: #17a2b8;
-}
-
-.quick-actions {
+.info-row {
     display: flex;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    justify-content: center;
-    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    gap: 0.5rem;
 }
 
-.quick-actions .btn {
-    padding: 0.75rem 1.5rem;
+.info-label {
+    font-weight: 600;
+    color: #555;
+    min-width: 100px;
+}
+
+.info-value {
+    word-break: break-all;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.tag {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
     font-weight: 500;
+    border-radius: 4px;
 }
 
-@keyframes slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
+.tag-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.tag-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.tag-danger {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    background: white;
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-top: auto;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-icon {
+    font-size: 1rem;
+}
+
+.status-text {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .scanner-view {
+        padding: 0.5rem;
     }
 
-    to {
-        transform: translateX(0);
-        opacity: 1;
+    .actions-section {
+        flex-direction: column;
+    }
+
+    .status-bar {
+        flex-direction: column;
+        gap: 0.5rem;
     }
 }
 </style>

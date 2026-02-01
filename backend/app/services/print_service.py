@@ -1,9 +1,8 @@
-import socket
 import json
-import asyncio
 from datetime import datetime
 from typing import Optional, Dict
-import os
+import base64
+import io
 
 from ..database import SessionLocal
 from .. import models
@@ -12,112 +11,142 @@ from .qr_service import QRService
 
 class PrintService:
     def __init__(self):
-        self.connected_printers = {}
+        pass
 
-    def auto_detect_printer(self) -> Optional[Dict]:
-        """Автоматическое обнаружение принтера в сети"""
-        try:
-            # Попробуем найти принтер по распространенным IP
-            common_ips = [
-                "192.168.1.100",
-                "192.168.1.101",
-                "192.168.1.102",
-                "192.168.0.100",
-                "192.168.0.101",
-                "192.168.0.102",
-                "10.0.0.100",
-                "10.0.0.101",
-                "10.0.0.102",
-            ]
-
-            for ip in common_ips:
-                for port in [9100, 515, 631]:
-                    if self.test_connection(ip, port):
-                        return {
-                            "ip": ip,
-                            "port": port,
-                            "name": f"Автообнаруженный принтер {ip}",
-                            "type": "network",
-                        }
-        except:
-            pass
-
-        return None
-
-    def test_connection(self, ip: str, port: int, timeout: float = 1.0) -> bool:
-        """Проверить соединение с принтером"""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            result = sock.connect_ex((ip, port))
-            sock.close()
-            return result == 0
-        except:
-            return False
-
-    async def print_to_network_printer(
-        self, qr_content: str, printer_ip: str, port: int = 9100
-    ) -> bool:
-        """Send print job to network printer (ZPL or similar)"""
-        try:
-            # Генерируем ZPL код для QR
-            zpl_code = self._generate_zpl_for_qr(qr_content)
-
-            # Отправляем на принтер
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(5)
-                sock.connect((printer_ip, port))
-                sock.sendall(zpl_code.encode())
-                sock.close()
-
-            return True
-        except Exception as e:
-            print(f"Print error: {e}")
-            return False
-
-    def _generate_zpl_for_qr(self, content: str) -> str:
-        """Generate ZPL code for QR printing"""
-        zpl = f"""
-^XA
-^FO20,20
-^BQN,2,10
-^FDMA,{content}
-^FS
-^FO20,150
-^A0N,30,30
-^FD{content[:30]}
-^FS
-^XZ
-"""
-        return zpl
-
-    async def print_via_browser(
+    async def prepare_browser_print_data(
         self, qr_content: str, label_size: str = "50x30"
     ) -> Dict:
         """Prepare data for browser printing"""
-        qr_image = QRService.generate_qr_code(qr_content, 150)
+        qr_image = QRService.generate_qr_code(qr_content, 200)
+
+        # Создаем HTML для печати
+        html_content = self._create_print_html(qr_content, qr_image)
 
         return {
             "qr_image": qr_image,
-            "content": qr_content,
+            "qr_content": qr_content,
             "label_size": label_size,
             "timestamp": datetime.now().isoformat(),
+            "html_content": html_content,
             "print_command": "window.print()",
         }
 
-    async def test_printer_connection(self, printer_ip: str, port: int = 9100) -> bool:
-        """Test if printer is reachable"""
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(3)
-                result = sock.connect_ex((printer_ip, port))
-                return result == 0
-        except:
-            return False
+    def _create_print_html(self, qr_content: str, qr_image: str) -> str:
+        """Create HTML content for printing"""
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Печать QR-кода</title>
+            <style>
+                @media print {{
+                    body {{
+                        margin: 0;
+                        padding: 0;
+                    }}
+                    .no-print {{
+                        display: none !important;
+                    }}
+                }}
+                
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                    text-align: center;
+                }}
+                
+                .qr-container {{
+                    margin: 20px auto;
+                    padding: 20px;
+                    border: 1px solid #ccc;
+                    border-radius: 8px;
+                    max-width: 400px;
+                }}
+                
+                .qr-image {{
+                    width: 300px;
+                    height: 300px;
+                    margin: 20px auto;
+                    display: block;
+                }}
+                
+                .qr-content {{
+                    margin-top: 20px;
+                    padding: 10px;
+                    background: #f5f5f5;
+                    border-radius: 4px;
+                    word-break: break-all;
+                    font-family: monospace;
+                }}
+                
+                .print-info {{
+                    margin-top: 10px;
+                    color: #666;
+                    font-size: 12px;
+                }}
+                
+                .print-button {{
+                    margin: 20px;
+                    padding: 10px 20px;
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="qr-container">
+                <h2>QR-код для печати</h2>
+                <img src="{qr_image}" alt="QR Code" class="qr-image" />
+                <div class="qr-content">
+                    <strong>Содержимое:</strong><br>
+                    {qr_content}
+                </div>
+                <div class="print-info">
+                    Отсканировано: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+                </div>
+            </div>
+            
+            <button class="print-button no-print" onclick="window.print()">
+                🖨️ Печатать
+            </button>
+            <button class="print-button no-print" onclick="window.close()">
+                ✖️ Закрыть
+            </button>
+            
+            <script>
+                // Автоматически открываем диалог печати без подтверждения
+                window.onload = function() {{
+                    setTimeout(function() {{
+                        window.print();
+                    }}, 500);
+                }};
+                
+                // Закрываем окно после печати
+                window.onafterprint = function() {{
+                    setTimeout(function() {{
+                        window.close();
+                    }}, 1000);
+                }};
+            </script>
+        </body>
+        </html>
+        """
+
+    def generate_print_job(self, qr_content: str) -> Dict:
+        """Generate print job data"""
+        return {
+            "type": "browser_print",
+            "qr_content": qr_content,
+            "timestamp": datetime.now().isoformat(),
+            "instructions": "Используйте стандартный диалог печати браузера",
+        }
 
 
 async def print_qr_background(scan_id: int, printer_id: Optional[int] = None):
-    """Background task to print QR code"""
+    """Background task to print QR code - теперь только логирование"""
     db = SessionLocal()
     try:
         scan = (
@@ -126,52 +155,14 @@ async def print_qr_background(scan_id: int, printer_id: Optional[int] = None):
         if not scan:
             return
 
-        print_service = PrintService()
-
-        # Получаем принтер из базы если указан printer_id
-        printer = None
-        if printer_id:
-            printer = (
-                db.query(models.Printer)
-                .filter(
-                    models.Printer.id == printer_id, models.Printer.is_active == True
-                )
-                .first()
-            )
-
-        # Если принтер не указан, используем принтер по умолчанию
-        if not printer:
-            printer = (
-                db.query(models.Printer)
-                .filter(
-                    models.Printer.is_default == True, models.Printer.is_active == True
-                )
-                .first()
-            )
-
-        print_status = "failed"
-
-        if printer and printer.connection_type == "network" and printer.ip_address:
-            # Печать на сетевой принтер
-            success = await print_service.print_to_network_printer(
-                scan.qr_content, printer.ip_address, printer.port or 9100
-            )
-            print_status = "success" if success else "failed"
-        else:
-            # Для других типов принтеров или браузерной печати
-            # Просто отмечаем как успех, т.к. браузер сам печатает
-            print_status = "success"
-
-        # Обновляем статус в базе
-        scan.print_status = print_status
-        scan.printed_at = datetime.utcnow()
+        # Для браузерной печати просто помечаем как готовый к печати
+        scan.print_status = "pending"
         db.commit()
 
-        print(f"Background print completed for scan {scan_id}: {print_status}")
+        print(f"Scan {scan_id} готов к печати через браузер. QR: {scan.qr_content}")
 
     except Exception as e:
-        print(f"Background print failed: {e}")
-        # Обновляем статус на failed при ошибке
+        print(f"Ошибка подготовки к печати: {e}")
         try:
             scan.print_status = "failed"
             db.commit()

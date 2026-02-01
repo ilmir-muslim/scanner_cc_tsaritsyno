@@ -6,15 +6,14 @@ from contextlib import asynccontextmanager
 from .database import engine, Base
 from .config import settings
 from .routers import scans, printers, print_router
+from .routers import remote_scanner
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print("Starting QR Replication System...")
     Base.metadata.create_all(bind=engine)
     yield
-    # Shutdown
     print("Shutting down...")
 
 
@@ -25,7 +24,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -34,10 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(scans.router)
 app.include_router(printers.router)
 app.include_router(print_router.router)
+app.include_router(remote_scanner.router)
 
 
 @app.get("/")
@@ -48,6 +46,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "qr-system"}
+
 
 
 if __name__ == "__main__":

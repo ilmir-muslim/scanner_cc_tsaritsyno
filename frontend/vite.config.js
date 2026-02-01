@@ -17,22 +17,28 @@ export default defineConfig({
         target: 'http://backend:8003',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/api')
+      },
+      // WebSocket proxy
+      '/ws': {
+        target: 'ws://backend:8003',
+        ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ws/, '')
       }
     }
   },
-  // Добавить для продакшена
   build: {
     sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['vue', 'vue-router', 'axios'],
-          scanner: ['jsqr']
+          scanner: ['jsqr'],
+          qrcode: ['qrcode']
         }
       }
     }
   },
-  // Переменные окружения для фронтенда
   define: {
     'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || '/api')
   }

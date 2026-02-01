@@ -27,7 +27,6 @@ class ExcelService:
         ws = wb.active
         ws.title = "Scan Report"
 
-        # Headers
         headers = [
             "ID",
             "QR Content",
@@ -42,7 +41,6 @@ class ExcelService:
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal="center")
 
-        # Data
         for row, record in enumerate(records, 2):
             ws.cell(row=row, column=1, value=record.id)
             ws.cell(row=row, column=2, value=record.qr_content)
@@ -60,7 +58,6 @@ class ExcelService:
             )
             ws.cell(row=row, column=7, value=record.print_status)
 
-        # Auto-adjust column widths
         for column in ws.columns:
             max_length = 0
             column_letter = column[0].column_letter
@@ -73,7 +70,6 @@ class ExcelService:
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
 
-        # Save to bytes
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)

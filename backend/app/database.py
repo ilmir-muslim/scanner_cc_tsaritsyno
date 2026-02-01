@@ -2,7 +2,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from .config import settings
 
-# Используем psycopg2 для PostgreSQL
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,

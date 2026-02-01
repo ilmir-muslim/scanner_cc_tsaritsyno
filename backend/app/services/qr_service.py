@@ -22,7 +22,6 @@ class QRService:
 
             img = qr.make_image(fill_color="black", back_color="white")
 
-            # Конвертируем PIL Image в base64
             buffered = io.BytesIO()
             img.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
@@ -31,14 +30,11 @@ class QRService:
 
         except Exception as e:
             print(f"QR generation error: {e}")
-            # Возвращаем пустую картинку при ошибке
             return ""
 
     @staticmethod
     def decode_qr_from_image(image_bytes: bytes) -> Optional[str]:
         """Decode QR code from image bytes - placeholder for future implementation"""
-        # В текущей реализации декодирование делается на фронтенде
-        # Это заглушка для будущей реализации на бэкенде
         print("QR decoding is handled by frontend")
         return None
 
@@ -47,7 +43,7 @@ class QRService:
         """Validate QR code content"""
         if not content or len(content.strip()) == 0:
             return False
-        if len(content) > 1000:  # Reasonable limit
+        if len(content) > 1000: 
             return False
         return True
 

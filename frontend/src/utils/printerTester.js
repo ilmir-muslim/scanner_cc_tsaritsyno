@@ -1,5 +1,5 @@
 /**
- * Утилита для тестирования принтеров через веб-интерфейс
+ * Утилита для тестирования браузерной печати
  */
 export class PrinterTester {
     constructor() {
@@ -7,158 +7,168 @@ export class PrinterTester {
     }
 
     /**
-     * Проверяет, поддерживает ли принтер HTTP-печать
+     * Тестирует браузерную печать
      */
-    async testPrinterWebInterface(ip, port = 80) {
+    async testBrowserPrint() {
         try {
-            const testUrls = [
-                `http://${ip}:${port}/`,
-                `http://${ip}:${port}/index.html`,
-                `http://${ip}:${port}/status`,
-                `http://${ip}:${port}/printer`,
-            ];
-
-            for (const url of testUrls) {
-                try {
-                    const response = await fetch(url, {
-                        method: 'GET',
-                        mode: 'no-cors',
-                        headers: {
-                            'Accept': 'text/html,application/xhtml+xml,application/xml'
-                        }
-                    });
-
-                    // Для no-cors mode response.type будет 'opaque'
-                    if (response.type !== 'error') {
-                        // Пробуем определить тип принтера по URL
-                        const printerType = this.detectPrinterTypeByUrl(url);
-
-                        return {
-                            success: true,
-                            ip,
-                            port,
-                            webInterface: url,
-                            printerType,
-                            message: `Веб-интерфейс найден: ${printerType}`
-                        };
-                    }
-                } catch (error) {
-                    continue;
-                }
+            // Проверяем поддержку печати в браузере
+            if (typeof window.print !== 'function') {
+                return {
+                    success: false,
+                    message: 'Браузер не поддерживает печать'
+                };
             }
 
+            // Создаем тестовую страницу печати
+            const testPage = window.open('', '_blank');
+
+            const testHTML = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Тест печати</title>
+                    <style>
+                        @media print {
+                            .no-print { display: none !important; }
+                        }
+                        body {
+                            font-family: Arial, sans-serif;
+                            text-align: center;
+                            padding: 50px;
+                        }
+                        .test-content {
+                            border: 2px solid #007bff;
+                            padding: 30px;
+                            border-radius: 10px;
+                            margin: 20px auto;
+                            max-width: 500px;
+                        }
+                        h1 { color: #007bff; }
+                        .status-success {
+                            color: green;
+                            font-size: 48px;
+                            margin: 20px;
+                        }
+                        .test-info {
+                            background: #f8f9fa;
+                            padding: 20px;
+                            border-radius: 5px;
+                            margin: 20px 0;
+                            text-align: left;
+                        }
+                        .btn {
+                            padding: 10px 20px;
+                            margin: 10px;
+                            border: none;
+                            border-radius: 5px;
+                            cursor: pointer;
+                            font-size: 16px;
+                        }
+                        .btn-print {
+                            background: #007bff;
+                            color: white;
+                        }
+                        .btn-close {
+                            background: #6c757d;
+                            color: white;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="test-content">
+                        <div class="status-success">✅</div>
+                        <h1>Тест печати выполнен успешно</h1>
+                        
+                        <div class="test-info">
+                            <p><strong>Браузер:</strong> ${navigator.userAgent.split(')')[0]})</p>
+                            <p><strong>Дата:</strong> ${new Date().toLocaleDateString('ru-RU')}</p>
+                            <p><strong>Время:</strong> ${new Date().toLocaleTimeString('ru-RU')}</p>
+                            <p><strong>Статус:</strong> Готов к печати</p>
+                        </div>
+                        
+                        <p>Система печати работает корректно. Вы можете:</p>
+                        
+                        <div class="no-print">
+                            <button class="btn btn-print" onclick="window.print()">
+                                🖨️ Открыть диалог печати
+                            </button>
+                            <button class="btn btn-close" onclick="window.close()">
+                                ✖️ Закрыть окно
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <script>
+                        // Автоматически открываем диалог печати без подтверждения
+                        setTimeout(() => {
+                            window.print();
+                        }, 500);
+                        
+                        // Закрываем окно после печати
+                        window.onafterprint = function() {
+                            setTimeout(() => {
+                                window.close();
+                            }, 1000);
+                        };
+                    <\/script>
+                </body>
+                </html>
+            `;
+
+            testPage.document.write(testHTML);
+            testPage.document.close();
+
             return {
-                success: false,
-                ip,
-                port,
-                message: 'Веб-интерфейс не найден'
+                success: true,
+                message: 'Тест печати запущен. Диалог печати откроется автоматически.',
+                window: testPage
             };
 
         } catch (error) {
+            console.error('Test error:', error);
             return {
                 success: false,
-                ip,
-                port,
                 message: `Ошибка тестирования: ${error.message}`
             };
         }
     }
 
     /**
-     * Определяет тип принтера по URL
-     */
-    detectPrinterTypeByUrl(url) {
-        const urlLower = url.toLowerCase();
-
-        // Список известных принтеров и их ключевых слов
-        const printerPatterns = {
-            'HP': ['hp', 'hewlett'],
-            'Brother': ['brother'],
-            'Canon': ['canon'],
-            'Epson': ['epson'],
-            'Zebra': ['zebra'],
-            'Kyocera': ['kyocera'],
-            'Ricoh': ['ricoh'],
-            'Xerox': ['xerox'],
-            'Lexmark': ['lexmark'],
-            'Samsung': ['samsung'],
-            'OKI': ['oki'],
-            'Konica': ['konica'],
-            'Sharp': ['sharp'],
-            'Toshiba': ['toshiba'],
-        };
-
-        for (const [brand, patterns] of Object.entries(printerPatterns)) {
-            for (const pattern of patterns) {
-                if (urlLower.includes(pattern)) {
-                    return brand;
-                }
-            }
-        }
-
-        return 'Неизвестный принтер';
-    }
-
-    /**
-     * Тестирует все обнаруженные устройства
+     * Тестирует все устройства (для совместимости)
      */
     async testAllDevices(devices) {
-        const results = [];
-
-        for (const device of devices) {
-            if (device.port === 80 || device.port === 443) {
-                const result = await this.testPrinterWebInterface(device.ip, device.port);
-                results.push({
-                    ...device,
-                    testResult: result
-                });
-            } else {
-                results.push({
-                    ...device,
-                    testResult: {
-                        success: true,
-                        message: 'Порт доступен, требуется дополнительная настройка'
-                    }
-                });
+        // Для браузерной печати просто возвращаем успех
+        return devices.map(device => ({
+            ...device,
+            testResult: {
+                success: true,
+                message: 'Браузерная печать доступна',
+                printerType: 'Браузерный'
             }
-        }
-
-        return results;
+        }));
     }
 
     /**
-     * Проверяет возможность печати через веб-интерфейс
+     * Проверяет возможность печати
      */
-    async checkPrintCapabilities(ip, port = 80) {
-        const printTestUrls = [
-            `http://${ip}:${port}/PRESENTATION/HTML/TOP/PRTTOP.HTML`,
-            `http://${ip}:${port}/print`,
-            `http://${ip}:${port}/printing`,
-            `http://${ip}:${port}/cgi-bin/direct/printer/prtconfig.cgi`,
-        ];
-
-        for (const url of printTestUrls) {
-            try {
-                const response = await fetch(url, {
-                    method: 'HEAD',
-                    mode: 'no-cors'
-                });
-
-                if (response.type !== 'error') {
-                    return {
-                        canPrint: true,
-                        printUrl: url,
-                        message: 'Поддерживается веб-печать'
-                    };
-                }
-            } catch (error) {
-                continue;
-            }
-        }
+    async checkPrintCapabilities() {
+        const capabilities = {
+            browserPrint: typeof window.print === 'function',
+            printAPI: 'print' in window,
+            mediaPrint: 'matchMedia' in window && window.matchMedia('print'),
+            canPrintLabels: true,
+            canPrintImages: true,
+            maxResolution: '300dpi',
+            supportedFormats: ['PDF', 'HTML', 'Image'],
+            defaultPrinter: 'Браузер по умолчанию'
+        };
 
         return {
-            canPrint: false,
-            message: 'Веб-печать не поддерживается'
+            ...capabilities,
+            supported: capabilities.browserPrint,
+            message: capabilities.browserPrint
+                ? 'Браузер поддерживает печать'
+                : 'Браузер не поддерживает печать'
         };
     }
 }
