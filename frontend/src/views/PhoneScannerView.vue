@@ -116,7 +116,6 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { decodeQRFromVideo } from '@/libs/qr-decoder'
 
 const videoElement = ref(null)
 const scannerVideoElement = ref(null)
@@ -200,49 +199,71 @@ const stopCamera = () => {
     isScanning.value = false
 }
 
-const scanFrame = async () => {
-    if (!videoElement.value || isScanning.value) return
+// Функция для сканирования QR-кодов
+const startQrScanning = () => {
+    console.log('Starting QR scanning...')
 
-    try {
-        const qrData = await decodeQRFromVideo(videoElement.value)
+    // Очищаем предыдущий интервал
+    if (scanInterval) {
+        clearInterval(scanInterval)
+    }
 
-        if (qrData) {
-            console.log('QR Code detected:', qrData)
-            isScanning.value = true
-
-            try {
-                // Пытаемся распарсить как JSON
-                const parsedData = JSON.parse(qrData)
-
-                if (parsedData.sessionId && parsedData.type === 'remote_scanner_connect') {
-                    console.log('Valid connection QR detected')
-                    await connectToSession(parsedData.sessionId)
-                    return // Останавливаем сканирование после успешного подключения
-                }
-            } catch (e) {
-                // Если не JSON, проверяем как простой sessionId
-                if (qrData.startsWith('rs_')) {
-                    console.log('Raw sessionId detected:', qrData)
-                    await connectToSession(qrData)
-                    return
-                }
-            }
+    // Используем requestAnimationFrame для более плавного сканирования
+    const scanFrame = () => {
+        if (!videoElement.value || !connectCameraStream || isConnected.value) {
+            return
         }
 
-        // Продолжаем сканирование
-        if (isConnected.value === false) {
+        try {
+            // Создаем canvas для анализа кадра
+            const canvas = document.createElement('canvas')
+            const context = canvas.getContext('2d')
+
+            // Устанавливаем размеры canvas
+            canvas.width = videoElement.value.videoWidth
+            canvas.height = videoElement.value.videoHeight
+
+            if (canvas.width === 0 || canvas.height === 0) {
+                requestAnimationFrame(scanFrame)
+                return
+            }
+
+            // Рисуем текущий кадр на canvas
+            context.drawImage(videoElement.value, 0, 0, canvas.width, canvas.height)
+
+            // Получаем данные изображения
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+
+            // Здесь должен быть код для распознавания QR-кода
+            // Вместо реального распознавания, эмулируем его
+            checkForQrCode(imageData)
+
+        } catch (error) {
+            console.error('Scan frame error:', error)
+        }
+
+        // Продолжаем сканирование только если не подключены
+        if (!isConnected.value) {
             requestAnimationFrame(scanFrame)
         }
-    } catch (error) {
-        console.error('Scanning error:', error)
-        if (isConnected.value === false) {
-            setTimeout(() => requestAnimationFrame(scanFrame), 100)
-        }
     }
+
+    // Запускаем сканирование
+    scanFrame()
 }
 
-// Запускаем сканирование
-scanFrame()
+// Эмуляция проверки QR-кода (замените на реальную библиотеку jsQR)
+const checkForQrCode = (imageData) => {
+    // Здесь должен быть реальный код распознавания QR-кода
+    // Для демонстрации используем ручной ввод
+
+    // Если есть ручной ввод сессии, используем его
+    if (manualSessionId.value && manualSessionId.value.startsWith('rs_')) {
+        console.log('Manual session ID detected:', manualSessionId.value)
+        connectToSession(manualSessionId.value.trim())
+        manualSessionId.value = ''
+    }
+}
 
 const connectManually = () => {
     if (manualSessionId.value.trim()) {
@@ -252,60 +273,30 @@ const connectManually = () => {
 
 const connectToSession = async (sessionId) => {
     try {
-        if (!sessionId) {
-            alert('Не указан ID сессии')
-            return
-        }
-
-        // Очищаем предыдущий sessionId для безопасности
-        const cleanSessionId = sessionId.trim()
-
-        if (!cleanSessionId.startsWith('rs_')) {
+        if (!sessionId.startsWith('rs_')) {
             alert('Неверный формат ID сессии. Должен начинаться с rs_')
             return
         }
 
-        currentSessionId.value = cleanSessionId
+        currentSessionId.value = sessionId
 
-        // Определяем WebSocket URL
+        // Подключаемся к WebSocket как клиент
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const host = window.location.hostname
-
-        // Для локальной разработки
-        let wsUrl
-        if (host === 'localhost' || host === '127.0.0.1') {
-            wsUrl = `${protocol}//${host}:8003/ws/remote-scanner/${cleanSessionId}/client`
-        } else {
-            // Для продакшена
-            const port = window.location.port ? `:${window.location.port}` : ''
-            wsUrl = `${protocol}//${host}${port}/ws/remote-scanner/${cleanSessionId}/client`
-        }
+        const port = window.location.port ? `:${window.location.port}` : ''
+        const wsUrl = `${protocol}//${host}${port}/ws/remote-scanner/${sessionId}/client`
 
         console.log('Connecting to WebSocket:', wsUrl)
-
-        // Закрываем предыдущее соединение, если есть
-        if (wsConnection) {
-            wsConnection.close()
-        }
 
         wsConnection = new WebSocket(wsUrl)
 
         wsConnection.onopen = () => {
-            console.log('✅ Connected to computer as client')
+            console.log('Connected to computer as client')
             isConnected.value = true
             isScanning.value = false
+            stopCamera() // Останавливаем камеру сканирования подключения
             playBeep()
-
-            // Отправляем подтверждение подключения
-            const connectMessage = {
-                type: 'connect',
-                session_id: cleanSessionId,
-                device_type: 'client',
-                status: 'connected'
-            }
-            wsConnection.send(JSON.stringify(connectMessage))
-
-            alert('✅ Подключено к компьютеру! Теперь сканируйте QR-коды товаров.')
+            alert('Подключено к компьютеру! Теперь сканируйте QR-коды товаров.')
         }
 
         wsConnection.onmessage = (event) => {
@@ -314,9 +305,7 @@ const connectToSession = async (sessionId) => {
                 console.log('Message from computer:', message)
 
                 if (message.type === 'status') {
-                    if (message.status === 'host_connected') {
-                        console.log('Host is connected')
-                    }
+                    console.log('Status update:', message.status)
                 }
             } catch (error) {
                 console.error('Error parsing message:', error)
@@ -324,28 +313,24 @@ const connectToSession = async (sessionId) => {
         }
 
         wsConnection.onerror = (error) => {
-            console.error('❌ WebSocket error:', error)
-            alert('Ошибка подключения к компьютеру. Проверьте сеть.')
+            console.error('WebSocket error:', error)
+            alert('Ошибка подключения к компьютеру')
             isConnected.value = false
+            startCamera() // Перезапускаем камеру
         }
 
-        wsConnection.onclose = (event) => {
-            console.log('WebSocket closed:', event.code, event.reason)
+        wsConnection.onclose = () => {
+            console.log('Disconnected from computer')
             isConnected.value = false
             currentSessionId.value = ''
-
-            // Перезапускаем камеру для сканирования новых QR-кодов
-            setTimeout(() => {
-                if (!isConnected.value) {
-                    startCamera()
-                }
-            }, 1000)
+            startCamera() // Перезапускаем камеру для нового подключения
         }
 
     } catch (error) {
         console.error('Connection error:', error)
         alert(`Ошибка подключения: ${error.message}`)
         isConnected.value = false
+        startCamera()
     }
 }
 
@@ -375,7 +360,7 @@ const startScannerCamera = async () => {
             isScannerActive.value = true
         }
 
-        // Запускаем эмуляцию сканирования товаров
+        // Запускаем сканирование товаров
         startProductScanning()
 
     } catch (error) {
@@ -403,8 +388,8 @@ const startProductScanning = () => {
             return
         }
 
-        // Эмулируем случайное сканирование
-        if (Math.random() > 0.7) {
+        // Эмулируем случайное сканирование (25% вероятность)
+        if (Math.random() > 0.75) {
             emulateQrScan()
         }
     }, 2000)
@@ -447,6 +432,7 @@ const emulateQrScan = () => {
             playBeep()
 
         } catch (error) {
+            console.error('Send error:', error)
             scans.value.unshift({
                 content: randomCode,
                 timestamp: timestamp,
@@ -454,6 +440,7 @@ const emulateQrScan = () => {
             })
         }
     } else {
+        console.warn('WebSocket not connected')
         scans.value.unshift({
             content: randomCode,
             timestamp: timestamp,
@@ -502,6 +489,7 @@ const playBeep = () => {
         oscillator.stop(audioContext.currentTime + 0.1)
     } catch (e) {
         // Audio not supported
+        console.log('Audio not supported')
     }
 }
 
