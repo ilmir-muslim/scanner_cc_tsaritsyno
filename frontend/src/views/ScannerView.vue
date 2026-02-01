@@ -322,27 +322,20 @@ const generateRemoteSession = async () => {
         remoteSessionId.value = sessionId
 
         // Создаем данные для QR-кода
-        const qrData = {
+        const qrData = JSON.stringify({
             sessionId: sessionId,
             type: 'remote_scanner_connect',
             timestamp: new Date().toISOString(),
-            url: window.location.hostname
-        }
-
-        const qrContent = JSON.stringify(qrData)
+            server: window.location.hostname
+        })
 
         // Генерируем QR-код
-        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrContent)}&format=png&margin=10&color=0-0-0&bgcolor=255-255-255`
-
-        // Альтернативно, можно использовать локальную генерацию QR-кода
-        // const qrCodeUrl = `/api/generate-qr?data=${encodeURIComponent(qrContent)}`
-
-        remoteQrCode.value = qrCodeUrl
+        remoteQrCode.value = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}&format=png&margin=10&color=0-0-0&bgcolor=255-255-255&qzone=2`
 
         // Подключаемся к WebSocket как хост
         connectWebSocket(sessionId, 'host')
 
-        alert('✅ QR-код для подключения создан! Отсканируйте его на телефоне.')
+        alert('✅ QR-код создан! Отсканируйте его на телефоне.')
 
     } catch (error) {
         console.error('Error generating remote session:', error)
