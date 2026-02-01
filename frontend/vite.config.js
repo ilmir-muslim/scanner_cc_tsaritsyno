@@ -33,8 +33,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['vue', 'vue-router', 'axios'],
-          scanner: ['jsqr'],
-          qrcode: ['qrcode']
+          scanner: ['jsqr']
         }
       }
     }

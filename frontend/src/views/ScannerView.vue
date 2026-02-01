@@ -30,23 +30,107 @@
                 <h2>Сканирование камерой</h2>
             </div>
 
-            <div class="camera-controls">
-                <button @click="toggleCamera"
-                    :class="['camera-toggle-btn', isCameraActive ? 'btn-danger' : 'btn-success']">
-                    {{ isCameraActive ? 'Выключить камеру' : 'Включить камеру' }}
+            <!-- Переключатель режима камеры -->
+            <div class="camera-mode-switcher">
+                <button @click="cameraMode = 'local'"
+                    :class="['camera-mode-btn', cameraMode === 'local' ? 'mode-btn-active' : '']">
+                    <span class="mode-icon">📱</span>
+                    <span>Локальная камера</span>
+                </button>
+                <button @click="cameraMode = 'remote'"
+                    :class="['camera-mode-btn', cameraMode === 'remote' ? 'mode-btn-active' : '']">
+                    <span class="mode-icon">📲</span>
+                    <span>Камера телефона</span>
                 </button>
             </div>
 
-            <div v-if="isCameraActive" class="camera-preview">
-                <video ref="videoElement" autoplay playsinline class="camera-video"></video>
-                <div class="scan-overlay">
-                    <div class="scan-frame"></div>
+            <!-- Локальная камера -->
+            <div v-if="cameraMode === 'local'" class="local-camera-section">
+                <div class="camera-controls">
+                    <button @click="toggleLocalCamera"
+                        :class="['camera-toggle-btn', isLocalCameraActive ? 'btn-danger' : 'btn-success']">
+                        {{ isLocalCameraActive ? 'Выключить камеру' : 'Включить камеру' }}
+                    </button>
                 </div>
 
-                <div class="camera-actions">
-                    <button @click="capturePhoto" class="btn btn-primary">
-                        📸 Сканировать QR-код
-                    </button>
+                <div v-if="isLocalCameraActive" class="camera-preview">
+                    <video ref="localVideoElement" autoplay playsinline class="camera-video"></video>
+                    <div class="scan-overlay">
+                        <div class="scan-frame"></div>
+                    </div>
+
+                    <div class="camera-actions">
+                        <button @click="capturePhoto" class="btn btn-primary">
+                            📸 Сканировать QR-код
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Удаленная камера (телефон) -->
+            <div v-else class="remote-camera-section">
+                <div v-if="!remoteSessionId" class="remote-setup">
+                    <div class="setup-card">
+                        <h3>Подключить камеру телефона</h3>
+                        <p class="setup-description">
+                            1. Нажмите кнопку ниже, чтобы создать QR-код подключения<br>
+                            2. Откройте приложение на телефоне<br>
+                            3. Во вкладке "Камера" выберите "Камера телефона"<br>
+                            4. Нажмите "Подключиться к компьютеру" и отсканируйте QR-код
+                        </p>
+
+                        <button @click="generateRemoteSession" class="btn btn-primary btn-lg">
+                            🔗 Создать подключение
+                        </button>
+                    </div>
+                </div>
+
+                <div v-else class="remote-session">
+                    <div class="session-info">
+                        <h3>Ожидание подключения телефона...</h3>
+                        <p>Отсканируйте этот QR-код на телефоне</p>
+
+                        <div class="qr-container">
+                            <img :src="remoteQrCode" alt="QR код подключения" class="connection-qr" />
+                            <div class="session-id">
+                                ID сессии: <code>{{ remoteSessionId }}</code>
+                            </div>
+                        </div>
+
+                        <div class="connection-status">
+                            <div v-if="isPhoneConnected" class="status-connected">
+                                <span class="status-icon">✅</span>
+                                <span>Телефон подключен</span>
+                            </div>
+                            <div v-else class="status-disconnected">
+                                <span class="status-icon">⏳</span>
+                                <span>Ожидание подключения телефона...</span>
+                            </div>
+                        </div>
+
+                        <div class="session-actions">
+                            <button @click="copySessionId" class="btn btn-secondary">
+                                📋 Копировать ID
+                            </button>
+                            <button @click="disconnectRemoteSession" class="btn btn-danger">
+                                ✖️ Отключить
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Лог сканирований с телефона -->
+                    <div v-if="remoteScans.length > 0" class="remote-scans-log">
+                        <h4>Отсканировано с телефона:</h4>
+                        <div class="scans-list">
+                            <div v-for="(scan, index) in remoteScans" :key="index" class="scan-item">
+                                <span class="scan-time">{{ formatTime(scan.timestamp) }}</span>
+                                <span class="scan-content">{{ truncateText(scan.content, 30) }}</span>
+                                <span :class="['scan-status', scan.printed ? 'status-printed' : 'status-pending']">
+                                    {{ scan.printed ? '✓' : '...' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -90,15 +174,15 @@
                 <span class="status-text">Сканов: {{ totalScans }}</span>
             </div>
             <div class="status-item">
-                <span class="status-icon">⏱️</span>
-                <span class="status-text">{{ currentTime }}</span>
+                <span class="status-icon">{{ isPhoneConnected ? '📱✅' : '📱' }}</span>
+                <span class="status-text">{{ isPhoneConnected ? 'Телефон подключен' : 'Телефон не подключен' }}</span>
             </div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import axios from 'axios'
 
 // Reactive variables
@@ -107,31 +191,30 @@ const scannerInput = ref('')
 const scannerInputRef = ref(null)
 const lastScan = ref(null)
 const totalScans = ref(0)
-const currentTime = ref('')
 
 // Camera variables
-const isCameraActive = ref(false)
-const videoElement = ref(null)
-let cameraStream = null
+const cameraMode = ref('local') // 'local' или 'remote'
+const isLocalCameraActive = ref(false)
+const localVideoElement = ref(null)
+let localCameraStream = null
+
+// Remote camera variables
+const remoteSessionId = ref(null)
+const remoteQrCode = ref('')
+const isPhoneConnected = ref(false)
+const remoteScans = ref([])
+let wsConnection = null
 
 onMounted(() => {
     focusScannerInput()
-    updateTime()
-    setInterval(updateTime, 60000)
     document.addEventListener('keydown', handleGlobalKeyDown)
 })
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleGlobalKeyDown)
-    stopCamera()
+    stopLocalCamera()
+    disconnectWebSocket()
 })
-
-const updateTime = () => {
-    currentTime.value = new Date().toLocaleTimeString('ru-RU', {
-        hour: '2-digit',
-        minute: '2-digit'
-    })
-}
 
 const focusScannerInput = () => {
     nextTick(() => {
@@ -157,15 +240,16 @@ const processScannerInput = async () => {
     focusScannerInput()
 }
 
-const toggleCamera = async () => {
-    if (isCameraActive.value) {
-        stopCamera()
+// Локальная камера
+const toggleLocalCamera = async () => {
+    if (isLocalCameraActive.value) {
+        stopLocalCamera()
     } else {
-        await startCamera()
+        await startLocalCamera()
     }
 }
 
-const startCamera = async () => {
+const startLocalCamera = async () => {
     try {
         const constraints = {
             video: {
@@ -175,38 +259,38 @@ const startCamera = async () => {
             }
         }
 
-        cameraStream = await navigator.mediaDevices.getUserMedia(constraints)
+        localCameraStream = await navigator.mediaDevices.getUserMedia(constraints)
 
-        if (videoElement.value) {
-            videoElement.value.srcObject = cameraStream
-            isCameraActive.value = true
+        if (localVideoElement.value) {
+            localVideoElement.value.srcObject = localCameraStream
+            isLocalCameraActive.value = true
         }
     } catch (error) {
         console.error('Error starting camera:', error)
     }
 }
 
-const stopCamera = () => {
-    if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop())
-        cameraStream = null
+const stopLocalCamera = () => {
+    if (localCameraStream) {
+        localCameraStream.getTracks().forEach(track => track.stop())
+        localCameraStream = null
     }
-    if (videoElement.value) {
-        videoElement.value.srcObject = null
+    if (localVideoElement.value) {
+        localVideoElement.value.srcObject = null
     }
-    isCameraActive.value = false
+    isLocalCameraActive.value = false
 }
 
 const capturePhoto = async () => {
-    if (!videoElement.value || !isCameraActive.value) return
+    if (!localVideoElement.value || !isLocalCameraActive.value) return
 
     try {
         const canvas = document.createElement('canvas')
-        canvas.width = videoElement.value.videoWidth
-        canvas.height = videoElement.value.videoHeight
+        canvas.width = localVideoElement.value.videoWidth
+        canvas.height = localVideoElement.value.videoHeight
 
         const ctx = canvas.getContext('2d')
-        ctx.drawImage(videoElement.value, 0, 0, canvas.width, canvas.height)
+        ctx.drawImage(localVideoElement.value, 0, 0, canvas.width, canvas.height)
 
         canvas.toBlob(async (blob) => {
             const formData = new FormData()
@@ -219,15 +303,128 @@ const capturePhoto = async () => {
             })
 
             if (response.data && response.data.qr_content) {
-                await processScan(response.data.qr_content, 'camera')
+                await processScan(response.data.qr_content, 'local_camera')
                 playBeep()
-                stopCamera()
+                stopLocalCamera()
             }
         }, 'image/jpeg', 0.8)
 
     } catch (error) {
         console.error('Error capturing photo:', error)
     }
+}
+
+// Удаленная камера (телефон)
+const generateRemoteSession = async () => {
+    try {
+        // Генерируем уникальный ID сессии
+        const sessionId = 'rs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+        remoteSessionId.value = sessionId
+
+        // Генерируем QR-код
+        const wsUrl = `ws://${window.location.host}/ws/remote-scanner/${sessionId}/client`
+        remoteQrCode.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(JSON.stringify({
+            sessionId: sessionId,
+            type: 'remote_scanner_connect'
+        }))}`
+
+        // Подключаемся к WebSocket как хост
+        connectWebSocket(sessionId, 'host')
+
+    } catch (error) {
+        console.error('Error generating remote session:', error)
+    }
+}
+
+const connectWebSocket = (sessionId, deviceType) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/ws/remote-scanner/${sessionId}/${deviceType}`
+
+    wsConnection = new WebSocket(wsUrl)
+
+    wsConnection.onopen = () => {
+        console.log('WebSocket connected as', deviceType)
+        if (deviceType === 'host') {
+            checkConnectionStatus()
+        }
+    }
+
+    wsConnection.onmessage = async (event) => {
+        const message = JSON.parse(event.data)
+
+        switch (message.type) {
+            case 'status':
+                if (message.status === 'client_connected') {
+                    isPhoneConnected.value = true
+                    playBeep()
+                } else if (message.status === 'client_disconnected') {
+                    isPhoneConnected.value = false
+                }
+                break
+
+            case 'scan':
+                if (message.qr_content && deviceType === 'host') {
+                    // Получили сканирование с телефона
+                    remoteScans.value.unshift({
+                        content: message.qr_content,
+                        timestamp: new Date(),
+                        printed: false
+                    })
+
+                    // Обрабатываем сканирование
+                    await processScan(message.qr_content, 'remote_phone')
+
+                    // Отмечаем как напечатанное
+                    const lastScan = remoteScans.value[0]
+                    lastScan.printed = true
+                }
+                break
+        }
+    }
+
+    wsConnection.onerror = (error) => {
+        console.error('WebSocket error:', error)
+    }
+
+    wsConnection.onclose = () => {
+        console.log('WebSocket disconnected')
+        isPhoneConnected.value = false
+    }
+}
+
+const disconnectWebSocket = () => {
+    if (wsConnection) {
+        wsConnection.close()
+        wsConnection = null
+    }
+}
+
+const checkConnectionStatus = async () => {
+    if (!remoteSessionId.value) return
+
+    try {
+        const response = await axios.get(`/ws/sessions/${remoteSessionId.value}/status`)
+        isPhoneConnected.value = response.data.client_connected
+
+        if (isPhoneConnected.value) {
+            setTimeout(checkConnectionStatus, 5000) // Проверяем каждые 5 секунд
+        }
+    } catch (error) {
+        console.error('Error checking connection status:', error)
+    }
+}
+
+const copySessionId = () => {
+    navigator.clipboard.writeText(remoteSessionId.value)
+    alert('ID сессии скопирован в буфер обмена')
+}
+
+const disconnectRemoteSession = () => {
+    remoteSessionId.value = null
+    remoteQrCode.value = ''
+    isPhoneConnected.value = false
+    remoteScans.value = []
+    disconnectWebSocket()
 }
 
 const processScan = async (qrContent, source) => {
@@ -437,13 +634,15 @@ const playBeep = () => {
 }
 
 const truncateText = (text, maxLength) => {
+    if (!text) return ''
     if (text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
 }
 
-const formatTime = (dateString) => {
-    if (!dateString) return ''
-    return new Date(dateString).toLocaleTimeString('ru-RU', {
+const formatTime = (dateOrString) => {
+    if (!dateOrString) return ''
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString
+    return date.toLocaleTimeString('ru-RU', {
         hour: '2-digit',
         minute: '2-digit'
     })
@@ -473,7 +672,7 @@ const getStatusText = (status) => {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    height: 100vh;
+    min-height: 100vh;
     padding: 1rem;
     background: #f8f9fa;
 }
@@ -530,6 +729,191 @@ const getStatusText = (status) => {
     font-weight: 600;
 }
 
+.camera-mode-switcher {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.camera-mode-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.camera-mode-btn:hover {
+    border-color: #28a745;
+}
+
+.camera-mode-btn.mode-btn-active {
+    border-color: #28a745;
+    background: #f0f9f0;
+}
+
+.local-camera-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.remote-camera-section {
+    min-height: 400px;
+}
+
+.setup-card {
+    text-align: center;
+    padding: 2rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px dashed #dee2e6;
+}
+
+.setup-description {
+    margin: 1.5rem 0;
+    color: #666;
+    line-height: 1.6;
+    text-align: left;
+}
+
+.btn-lg {
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+}
+
+.remote-session {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.session-info {
+    text-align: center;
+    padding: 1.5rem;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.qr-container {
+    margin: 1.5rem auto;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    display: inline-block;
+    border: 1px solid #ddd;
+}
+
+.connection-qr {
+    width: 200px;
+    height: 200px;
+    display: block;
+    margin: 0 auto;
+}
+
+.session-id {
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.connection-status {
+    margin: 1rem 0;
+    padding: 1rem;
+    border-radius: 8px;
+    background: #f8f9fa;
+}
+
+.status-connected {
+    color: #28a745;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.status-disconnected {
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.session-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+.remote-scans-log {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    border: 1px solid #dee2e6;
+}
+
+.remote-scans-log h4 {
+    margin: 0 0 1rem 0;
+    color: #333;
+}
+
+.scans-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.scan-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 1rem;
+}
+
+.scan-item:last-child {
+    border-bottom: none;
+}
+
+.scan-time {
+    color: #666;
+    font-size: 0.9rem;
+    min-width: 60px;
+}
+
+.scan-content {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.95rem;
+    word-break: break-all;
+}
+
+.scan-status {
+    font-weight: bold;
+    min-width: 20px;
+}
+
+.status-printed {
+    color: #28a745;
+}
+
+.status-pending {
+    color: #ffc107;
+}
+
 .scanner-input {
     width: 100%;
     padding: 0.75rem;
@@ -584,8 +968,10 @@ const getStatusText = (status) => {
 
 .camera-video {
     width: 100%;
+    max-height: 400px;
     border-radius: 8px;
     border: 2px solid #ddd;
+    object-fit: cover;
 }
 
 .scan-overlay {
@@ -656,6 +1042,15 @@ const getStatusText = (status) => {
 
 .btn-info:hover {
     background: #138496;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
 }
 
 .last-scan-info {
@@ -744,6 +1139,19 @@ const getStatusText = (status) => {
     .status-bar {
         flex-direction: column;
         gap: 0.5rem;
+    }
+
+    .camera-mode-switcher {
+        flex-direction: column;
+    }
+
+    .session-actions {
+        flex-direction: column;
+    }
+
+    .connection-qr {
+        width: 150px;
+        height: 150px;
     }
 }
 </style>

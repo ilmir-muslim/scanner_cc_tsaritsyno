@@ -8,6 +8,8 @@
         <router-link to="/" class="nav-link">Сканирование</router-link>
         <router-link to="/history" class="nav-link">История</router-link>
         <router-link to="/printers" class="nav-link">Принтеры</router-link>
+        <!-- Добавить ссылку для телефона -->
+        <router-link to="/phone-scanner" class="nav-link phone-link">📱 Телефон</router-link>
       </div>
     </nav>
 
@@ -18,7 +20,6 @@
 </template>
 
 <script setup>
-// Простой App без сложных зависимостей
 </script>
 
 <style>
@@ -83,5 +84,24 @@ body {
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+}
+.phone-link {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.phone-link:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+}
+
+@media (max-width: 768px) {
+  .navbar-menu {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .nav-link {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+  }
 }
 </style>

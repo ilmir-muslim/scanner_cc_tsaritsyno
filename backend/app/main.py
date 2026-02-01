@@ -36,6 +36,7 @@ app.include_router(scans.router)
 app.include_router(printers.router)
 app.include_router(print_router.router)
 app.include_router(remote_scanner.router)
+app.include_router(remote_scanner.router)
 
 
 @app.get("/")
@@ -46,7 +47,6 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "qr-system"}
-
 
 
 if __name__ == "__main__":
