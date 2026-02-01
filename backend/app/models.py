@@ -1,6 +1,6 @@
 from sqlalchemy import String, Integer, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, timedelta
 from .database import Base
 
 
@@ -50,3 +50,42 @@ class Printer(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now
     )
+
+
+class RemoteSession(Base):
+    __tablename__ = "remote_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(
+        String(6), unique=True, index=True
+    )  # 6-значный ID
+    host_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    client_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now() + timedelta(hours=1)
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Для восстановления подключений
+    host_websocket_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    client_websocket_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class PhotoScan(Base):
+    __tablename__ = "photo_scans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    file_path: Mapped[str] = mapped_column(String(500))
+    qr_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_processed: Mapped[bool] = mapped_column(Boolean, default=False)
