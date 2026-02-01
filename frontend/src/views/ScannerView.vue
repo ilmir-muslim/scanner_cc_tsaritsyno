@@ -182,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import axios from 'axios'
 
 // Reactive variables
@@ -321,16 +321,26 @@ const generateRemoteSession = async () => {
         const sessionId = Math.floor(100000 + Math.random() * 900000).toString()
         remoteSessionId.value = sessionId
 
-        // Создаем простой QR-код с только sessionId
-        const qrContent = sessionId
+        // Создаем URL для подключения
+        const protocol = window.location.protocol
+        const host = window.location.hostname
+        const port = window.location.port ? `:${window.location.port}` : ''
+        const connectUrl = `${protocol}//${host}${port}/phone-scanner?session=${sessionId}`
 
-        // Генерируем QR-код
+        // Создаем QR-код с URL
+        const qrContent = connectUrl
         remoteQrCode.value = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrContent)}&format=png&margin=10&color=0-0-0&bgcolor=255-255-255`
+
+        // Создаем сессию на бэкенде
+        await axios.post('/api/sessions/create', {
+            session_id: sessionId,
+            host_ip: window.location.hostname
+        })
+
+        console.log('✅ Сессия создана:', sessionId, 'URL:', connectUrl)
 
         // Подключаемся к WebSocket как хост
         connectWebSocket(sessionId, 'host')
-
-        alert('✅ QR-код создан! ID: ' + sessionId + '\nОтсканируйте его на телефоне или введите вручную.')
 
     } catch (error) {
         console.error('Error generating remote session:', error)

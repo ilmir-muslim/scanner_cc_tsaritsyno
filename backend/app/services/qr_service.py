@@ -116,3 +116,35 @@ class QRService:
                 print(f"Deleted file: {file_path}")
         except Exception as e:
             print(f"Error deleting file: {e}")
+
+    @staticmethod
+    def enhance_image(image_bytes: bytes) -> bytes:
+        """Улучшение качества изображения для лучшего распознавания QR-кода"""
+        try:
+            # Конвертируем байты в numpy массив
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is None:
+                return image_bytes
+            
+            # Конвертируем в grayscale
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Улучшаем контраст с помощью CLAHE
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+            
+            # Применяем размытие для удаления шума
+            blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
+            
+            # Бинаризация
+            _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Конвертируем обратно в байты
+            _, buffer = cv2.imencode('.jpg', binary)
+            return buffer.tobytes()
+            
+        except Exception as e:
+            print(f"Image enhancement error: {e}")
+            return image_bytes

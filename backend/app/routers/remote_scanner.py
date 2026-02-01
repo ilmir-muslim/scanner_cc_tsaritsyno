@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict
 import asyncio
 from ..database import get_db
@@ -12,6 +12,7 @@ router = APIRouter(prefix="/ws", tags=["remote-scanner"])
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.session_data: Dict[str, Dict] = {}  # Данные сессий
 
     async def connect(
         self, websocket: WebSocket, session_id: str, device_type: str, db: Session
@@ -19,15 +20,23 @@ class ConnectionManager:
         """Подключаем устройство и сохраняем в БД"""
         await websocket.accept()
 
-        # Находим или создаем сессию
+        # Находим сессию в БД
         session = (
             db.query(models.RemoteSession)
-            .filter(models.RemoteSession.session_id == session_id)
+            .filter(
+                models.RemoteSession.session_id == session_id,
+                models.RemoteSession.is_active == True,
+            )
             .first()
         )
 
         if not session:
-            session = models.RemoteSession(session_id=session_id, is_active=True)
+            # Создаем новую сессию если её нет
+            session = models.RemoteSession(
+                session_id=session_id,
+                is_active=True,
+                expires_at=datetime.now() + timedelta(hours=1),
+            )
             db.add(session)
 
         # Обновляем статус подключения
@@ -38,46 +47,51 @@ class ConnectionManager:
             session.client_connected = True
             session.client_websocket_id = f"{session_id}_client"
 
+        # Обновляем время жизни сессии
+        session.expires_at = datetime.now() + timedelta(hours=1)
+
         db.commit()
 
         # Сохраняем соединение
         connection_id = f"{session_id}_{device_type}"
         self.active_connections[connection_id] = websocket
 
+        # Сохраняем данные сессии
+        if session_id not in self.session_data:
+            self.session_data[session_id] = {
+                "host_connected": device_type == "host",
+                "client_connected": device_type == "client",
+                "last_activity": datetime.now(),
+                "scans": [],
+            }
+        else:
+            self.session_data[session_id][f"{device_type}_connected"] = True
+            self.session_data[session_id]["last_activity"] = datetime.now()
+
         print(f"✅ {device_type} подключен к сессии {session_id}")
         return connection_id
 
-    async def disconnect(self, connection_id: str, db: Session):
-        """Отключаем устройство и обновляем БД"""
-        if connection_id in self.active_connections:
+    def get_session_status(self, session_id: str):
+        """Получить статус сессии"""
+        if session_id in self.session_data:
+            return self.session_data[session_id]
+        return None
+
+    async def send_to_other_device(
+        self, session_id: str, from_device: str, message: dict
+    ):
+        """Отправить сообщение другому устройству в сессии"""
+        other_type = "client" if from_device == "host" else "host"
+        other_connection_id = f"{session_id}_{other_type}"
+
+        if other_connection_id in self.active_connections:
             try:
-                await self.active_connections[connection_id].close()
-            except:
-                pass
-            del self.active_connections[connection_id]
-
-        # Обновляем статус в БД
-        parts = connection_id.split("_")
-        if len(parts) >= 2:
-            session_id = parts[0]
-            device_type = parts[-1]  # 'host' или 'client'
-
-            session = (
-                db.query(models.RemoteSession)
-                .filter(models.RemoteSession.session_id == session_id)
-                .first()
-            )
-
-            if session:
-                if device_type == "host":
-                    session.host_connected = False
-                    session.host_websocket_id = None
-                else:
-                    session.client_connected = False
-                    session.client_websocket_id = None
-                db.commit()
-
-                print(f"❌ {device_type} отключен от сессии {session_id}")
+                await self.active_connections[other_connection_id].send_json(message)
+                return True
+            except Exception as e:
+                print(f"Ошибка отправки сообщения: {e}")
+                return False
+        return False
 
 
 manager = ConnectionManager()

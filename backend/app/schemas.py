@@ -58,16 +58,3 @@ class ExportRequest(BaseModel):
     user_id: Optional[int] = None
 
 
-class ImageScanRequest(BaseModel):
-    """Для сканирования из изображения"""
-
-    image_data: Optional[str] = None 
-
-
-class WebSocketMessage(BaseModel):
-    type: str  # "connect", "scan", "disconnect", "status"
-    session_id: Optional[str] = None
-    device_type: Optional[str] = None  # "host" (компьютер) или "client" (телефон)
-    qr_content: Optional[str] = None
-    status: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.now)

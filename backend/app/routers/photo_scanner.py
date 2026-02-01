@@ -165,3 +165,107 @@ async def get_photo_scans(
         }
         for scan in scans
     ]
+
+
+@router.post("/process-photo/")
+async def process_photo_and_connect(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    session_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Обработка фото с QR-кодом и подключение к сессии"""
+    try:
+        # Проверяем файл
+        if not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Файл должен быть изображением")
+
+        # Читаем байты
+        image_bytes = await file.read()
+
+        # Сохраняем временный файл
+        temp_file_path = QRService.save_temp_image(image_bytes)
+
+        # Распознаем QR-код
+        qr_content = QRService.decode_qr_from_bytes(image_bytes)
+
+        if not qr_content:
+            # Пробуем улучшить изображение
+            enhanced_image = QRService.enhance_image(image_bytes)
+            qr_content = QRService.decode_qr_from_bytes(enhanced_image)
+
+        if not qr_content:
+            raise HTTPException(status_code=400, detail="QR-код не найден на фото")
+
+        # Парсим URL если это ссылка
+        import urllib.parse
+
+        parsed_url = urllib.parse.urlparse(qr_content)
+
+        # Извлекаем session_id из URL параметров
+        query_params = urllib.parse.parse_qs(parsed_url.query)
+        extracted_session_id = query_params.get("session", [None])[0]
+
+        # Используем извлеченный session_id или переданный
+        target_session_id = extracted_session_id or session_id
+
+        if not target_session_id:
+            raise HTTPException(
+                status_code=400, detail="Session ID не найден в QR-коде"
+            )
+
+        # Проверяем существование сессии
+        session = (
+            db.query(models.RemoteSession)
+            .filter(
+                models.RemoteSession.session_id == target_session_id,
+                models.RemoteSession.is_active == True,
+            )
+            .first()
+        )
+
+        if not session:
+            # Создаем сессию если её нет
+            session = models.RemoteSession(
+                session_id=target_session_id,
+                client_connected=True,
+                is_active=True,
+                expires_at=datetime.now() + timedelta(hours=1),
+            )
+            db.add(session)
+            db.commit()
+            message = "Новая сессия создана"
+        else:
+            # Обновляем сессию
+            session.client_connected = True
+            session.expires_at = datetime.now() + timedelta(hours=1)
+            db.commit()
+            message = "Подключено к существующей сессии"
+
+        # Сохраняем запись о сканировании
+        photo_scan = models.PhotoScan(
+            filename=file.filename,
+            file_path=temp_file_path,
+            qr_content=qr_content,
+            session_id=target_session_id,
+            is_processed=True,
+            processed_at=datetime.now(),
+        )
+
+        db.add(photo_scan)
+        db.commit()
+
+        # Планируем удаление файла
+        background_tasks.add_task(QRService.delete_file, temp_file_path)
+
+        return {
+            "success": True,
+            "message": message,
+            "session_id": target_session_id,
+            "qr_content": qr_content,
+            "session_exists": True,
+            "connected": True,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка обработки фото: {str(e)}")
