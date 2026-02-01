@@ -2,10 +2,16 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+# Копируем package.json и package-lock.json
 COPY package*.json ./
-RUN npm ci --only=production
 
+# Устанавливаем ВСЕ зависимости (включая dev-зависимости для сборки)
+RUN npm ci
+
+# Копируем исходный код
 COPY . .
+
+# Собираем приложение
 RUN npm run build
 
 FROM node:18-alpine as runtime
@@ -15,9 +21,8 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
+# Копируем собранное приложение из stage build
 COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
-COPY --from=build --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --from=build --chown=nodejs:nodejs /app/package.json ./package.json
 
 USER nodejs
 
